@@ -1,6 +1,6 @@
 {
   "name": "desktop-app",
-  "module": "index.ts",
+  "main": "./out/main/index.js",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -14,7 +14,9 @@
     "vite": "^8.3.5"
   },
   "scripts": {
-    "dev": "bun run --watch index.ts",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
