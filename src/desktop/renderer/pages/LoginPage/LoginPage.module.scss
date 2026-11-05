@@ -1,0 +1,341 @@
+.viewLogin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 10;
+  color: $text-body;
+  background: $bg-primary;
+}
+
+.loginLeft {
+  flex: 1;
+  flex-shrink: 0;
+  background: linear-gradient(165deg, #0d1b2e 0%, #091223 55%, #0a0f1c 100%);
+  border-right: 1px solid $border-subtle;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  position: relative;
+
+  :global([data-theme="light"]) & {
+    background: linear-gradient(165deg, #eff6ff 0%, #e0f2fe 55%, #f1f5f9 100%);
+  }
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+
+    :global([data-theme="light"]) & {
+      background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+    }
+  }
+
+  &::after {
+    content: "";
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(0, 86, 210, 0.22) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+
+    :global([data-theme="light"]) & {
+      background: radial-gradient(circle, rgba(0, 119, 238, 0.12) 0%, transparent 70%);
+    }
+  }
+}
+
+.brandContent {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.loginLogo {
+  width: 96px;
+  height: 96px;
+  border-radius: 18px;
+  overflow: hidden;
+  margin: 0 auto 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+
+  :global([data-theme="light"]) & {
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.brandTitle {
+  font-family: $font-sans;
+  font-size: 27px;
+  font-weight: 700;
+  font-style: normal;
+  color: $text-primary;
+  letter-spacing: 0;
+  margin-bottom: 4px;
+}
+
+.brandSubtitle {
+  font-size: 12px;
+  color: $text-muted;
+  margin-bottom: 28px;
+}
+
+.featureList {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+}
+
+.featureCard {
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid $border-color;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  :global([data-theme="light"]) & {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  }
+}
+
+.featureIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(0, 86, 210, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+
+  :global([data-theme="light"]) & {
+    background: rgba(0, 119, 238, 0.12);
+    color: #0077ee;
+  }
+}
+
+.featureTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.featureDesc {
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.poweredBy {
+  position: absolute;
+  bottom: 16px;
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.loginRight {
+  flex: 1;
+  background: #111114;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 48px;
+
+  :global([data-theme="light"]) & {
+    background: #ffffff;
+  }
+}
+
+.formWrap {
+  width: 100%;
+  max-width: 320px;
+}
+
+.formTitle {
+  font-size: 22px;
+  font-weight: 600;
+  color: $text-primary;
+  margin-bottom: 4px;
+}
+
+.formSubtitle {
+  font-size: 13px;
+  color: $text-muted;
+  margin-bottom: 24px;
+}
+
+.loginError {
+  padding: 9px 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 12px;
+  margin-bottom: 14px;
+
+  :global([data-theme="light"]) & {
+    color: #dc2626;
+    background: #fef2f2;
+    border-color: #fecaca;
+  }
+}
+
+.fieldGroup {
+  margin-bottom: 14px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-secondary;
+  margin-bottom: 5px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $border-color;
+  border-radius: 8px;
+  color: $text-primary;
+  font-size: 13px;
+  outline: none;
+
+  :global([data-theme="light"]) & {
+    background: #f8fafc;
+  }
+
+  &::placeholder {
+    color: $text-muted;
+  }
+
+  &:focus {
+    border-color: rgba(56, 189, 248, 0.6);
+
+    :global([data-theme="light"]) & {
+      background: #ffffff;
+      border-color: #0077ee;
+    }
+  }
+}
+
+.passwordInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordInput {
+  padding-right: 38px;
+}
+
+.passwordToggleBtn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: $text-muted;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+
+  &:hover {
+    color: $text-primary;
+    background: var(--item-hover-bg);
+  }
+}
+
+.poaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.ldapBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(59, 158, 255, 0.1);
+  border: 1px solid rgba(59, 158, 255, 0.2);
+  border-radius: 20px;
+  font-size: 10.5px;
+  color: #38bdf8;
+  font-weight: 500;
+
+  :global([data-theme="light"]) & {
+    color: #0759ad;
+    background: #e8f3ff;
+    border-color: #c4e2ff;
+  }
+}
+
+.ldapDot {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.poaNote {
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #0056d2, #0077ee);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(1.08);
+  }
+}
+
+.helpRow {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: $text-muted;
+}
+
+.helpLink {
+  color: #38bdf8;
+  text-decoration: none;
+
+  :global([data-theme="light"]) & {
+    color: #0077ee;
+  }
+}

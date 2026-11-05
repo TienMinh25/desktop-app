@@ -1,17 +1,63 @@
-import { StrictMode } from "react"
+import { StrictMode, useState } from "react"
 import { createRoot } from "react-dom/client"
-
-function App() {
+import styles from "./App.module.scss"
+import { TitleBar } from "./components/layout/TitleBar/TitleBar"
+import { APP_CONFIG } from "./constants"
+import { useToast } from "./hooks/useToast"
+import { LoginPage } from "./pages/LoginPage/LoginPage"
+import { NoProjectPage } from "./pages/NoProjectPage/NoProjectPage"
+import { WorkspacePage } from "./pages/WorkspacePage/WorkspacePage"
+import "./styles/global.scss"
+import { ThemeProvider, type Theme } from "./theme/ThemeContext"
+function AppContent() {
+  const [authState, setAuthState] = useState<{
+    username: string
+    assignedProjects: string[]
+  } | null>(null)
+  const { toastMessage, showToast } = useToast()
+  const handleLoginSuccess = (username: string, assignedProjects: string[]) => {
+    setAuthState({ username, assignedProjects })
+  }
+  const handleSignOut = () => {
+    setAuthState(null)
+  }
+  const handleThemeChangeToast = (theme: Theme) => {
+    showToast(`${theme === "light" ? "Light" : "Dark"} mode enabled.`)
+  }
   return (
-    <main>
-      <h1>Desktop Coding Harness</h1>
-      <p>Electron and React are running.</p>
-    </main>
+    <div className={styles.appWindow}>
+      <TitleBar title={APP_CONFIG.APP_TITLE} onShowToast={showToast} />
+      <div className={styles.viewStage}>
+        {!authState ? (
+          <LoginPage onLoginSuccess={handleLoginSuccess} />
+        ) : authState.assignedProjects.length === 0 ? (
+          <NoProjectPage
+            username={authState.username}
+            onSignOut={handleSignOut}
+            onThemeChangeToast={handleThemeChangeToast}
+          />
+        ) : (
+          <WorkspacePage
+            username={authState.username}
+            assignedProjectIds={authState.assignedProjects}
+            onSignOut={handleSignOut}
+            onShowToast={showToast}
+            onThemeChangeToast={handleThemeChangeToast}
+          />
+        )}
+        {toastMessage && (
+          <div className={styles.appToast} role="status" aria-live="polite">
+            {toastMessage}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   </StrictMode>,
 )

@@ -1,0 +1,204 @@
+.sidebarSection {
+  padding: 20px 17px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: $text-primary;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.brandGlyph {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(135deg, #0056d2, #0077ee);
+  font-weight: 700;
+}
+
+.accessState {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 26px;
+  padding: 9px 10px;
+  color: $text-secondary;
+  font-size: 11px;
+  border-radius: 8px;
+  border: 1px solid $border-color;
+  background: rgba(255, 255, 255, 0.025);
+
+  :global([data-theme="light"]) & {
+    background: #fff;
+  }
+}
+
+.accessDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+}
+
+.main {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  background: var(--empty-main-bg);
+}
+
+.emptyAccessCard {
+  width: min(470px, 100%);
+  padding: 26px 30px;
+  border-radius: 14px;
+  border: 1px solid $border-color;
+  background: var(--empty-access-card-bg, var(--empty-card-bg));
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.42);
+
+  :global([data-theme="light"]) & {
+    box-shadow: 0 20px 55px rgba(15, 23, 42, 0.07);
+  }
+}
+
+.emptyAccessIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  color: #60a5fa;
+  border: 1px solid rgba(0, 119, 238, 0.3);
+  border-radius: 12px;
+  background: rgba(0, 119, 238, 0.12);
+}
+
+.eyebrow {
+  color: #60a5fa;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.title {
+  margin-top: 7px;
+  color: $text-primary;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.lead {
+  margin-top: 9px;
+  color: $text-secondary;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.divider {
+  height: 1px;
+  margin: 18px 0 14px;
+  background: $border-subtle;
+}
+
+.nextTitle {
+  margin-bottom: 11px;
+  color: $text-body;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.accessStep {
+  display: flex;
+  gap: 10px;
+  margin: 9px 0;
+
+  > span {
+    display: grid;
+    place-items: center;
+    flex: 0 0 20px;
+    height: 20px;
+    border-radius: 50%;
+    color: #93c5fd;
+    background: rgba(0, 119, 238, 0.15);
+    font-size: 10px;
+    font-weight: 700;
+
+    :global([data-theme="light"]) & {
+      color: #0759ad;
+    }
+  }
+
+  strong {
+    color: $text-body;
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+
+  p {
+    margin-top: 3px;
+    color: $text-muted;
+    font-size: 9.5px;
+    line-height: 1.45;
+  }
+}
+
+.accessNote {
+  margin: 14px 0;
+  padding: 8px 10px;
+  color: $text-secondary;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid #2563eb;
+  font-size: 9.5px;
+  line-height: 1.45;
+
+  :global([data-theme="light"]) & {
+    background: #f1f5f9;
+  }
+}
+
+.accessActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.contactItButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(135deg, #0056d2, #0077ee);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-decoration: none;
+
+  &:hover {
+    filter: brightness(1.08);
+  }
+}
+
+.signoutLink {
+  padding: 7px 3px;
+  border: 0;
+  color: $text-secondary;
+  background: transparent;
+  font-size: 10.5px;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+  }
+}

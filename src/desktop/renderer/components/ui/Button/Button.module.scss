@@ -1,0 +1,40 @@
+    .button {
+  @include flex-center;
+  gap: $spacing-xs;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.primary {
+  background-color: $accent-primary;
+  color: $text-on-accent;
+
+  &:hover:not(:disabled) {
+    background-color: $accent-hover;
+  }
+}
+
+.secondary {
+  background-color: $bg-secondary;
+  border-color: $border-color;
+  color: $text-primary;
+
+  &:hover:not(:disabled) {
+    background-color: $bg-surface;
+  }
+}
+
+.danger {
+  background-color: $danger;
+  color: $text-on-accent;
+}

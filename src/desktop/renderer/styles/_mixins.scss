@@ -1,0 +1,24 @@
+@use "./variables" as *;
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+@mixin custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: $bg-surface;
+    border-radius: 3px;
+  }
+}

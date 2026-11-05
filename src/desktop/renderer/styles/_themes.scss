@@ -1,0 +1,125 @@
+// Dark Theme (Default) & Light Theme definitions matching C-CodeX Spec
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-primary: #0c0c0e;
+  --bg-secondary: #0f1015;
+  --bg-surface: #14161c;
+  --bg-elevated: #181a22;
+  --bg-header: #0e0f13;
+  --bg-footer: rgba(0, 0, 0, 0.25);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #ffffff;
+  --text-body: #e2e8f0;
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-muted: rgba(255, 255, 255, 0.4);
+
+  --accent-primary: #0077ee;
+  --accent-hover: #1e88e5;
+  --accent-light: #38bdf8;
+  --accent-soft: #60a5fa;
+  --text-on-accent: #ffffff;
+
+  --item-hover-bg: rgba(255, 255, 255, 0.045);
+  --item-active-bg: rgba(0, 119, 238, 0.11);
+  --item-active-border: rgba(0, 119, 238, 0.22);
+  --item-active-text: #f8fafc;
+
+  --session-active-bg: rgba(0, 119, 238, 0.09);
+  --session-active-border: rgba(0, 163, 255, 0.16);
+  --session-active-text: #60c5ff;
+
+  --user-bubble-bg: #1b212d;
+  --user-bubble-border: rgba(0, 119, 238, 0.25);
+  --user-bubble-text: #e2e8f0;
+
+  --prompt-card-bg: #15161b;
+  --prompt-card-border: rgba(255, 255, 255, 0.11);
+  --prompt-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --workspace-pill-bg: #18191e;
+
+  --model-btn-bg: rgba(255, 255, 255, 0.05);
+  --model-btn-border: rgba(255, 255, 255, 0.09);
+  --model-btn-text: rgba(255, 255, 255, 0.85);
+
+  --signout-btn-bg: transparent;
+  --signout-btn-border: transparent;
+  --signout-btn-color: rgba(255, 255, 255, 0.58);
+
+  --toast-bg: #1b2029;
+  --toast-border: rgba(255, 255, 255, 0.12);
+  --toast-text: #e5e7eb;
+
+  --empty-card-bg: linear-gradient(145deg, rgba(22, 24, 31, 0.98), rgba(17, 18, 23, 0.98));
+  --empty-main-bg: radial-gradient(circle at 50% 45%, rgba(0, 86, 210, 0.08), transparent 52%), #0c0c0e;
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.15);
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-header: #ffffff;
+  --bg-footer: #f1f5f9;
+  --border-color: #dbe2ea;
+  --border-subtle: #e2e8f0;
+
+  --text-primary: #0f172a;
+  --text-body: #334155;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --accent-primary: #0077ee;
+  --accent-hover: #0056d2;
+  --accent-light: #0759ad;
+  --accent-soft: #1675ce;
+  --text-on-accent: #ffffff;
+
+  --item-hover-bg: #eef2f7;
+  --item-active-bg: #e8f3ff;
+  --item-active-border: #c4e2ff;
+  --item-active-text: #0759ad;
+
+  --session-active-bg: #e8f3ff;
+  --session-active-border: #c4e2ff;
+  --session-active-text: #0759ad;
+
+  --user-bubble-bg: #e9f2ff;
+  --user-bubble-border: #c9e0ff;
+  --user-bubble-text: #1e293b;
+
+  --prompt-card-bg: #ffffff;
+  --prompt-card-border: #dbe2ea;
+  --prompt-card-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
+  --workspace-pill-bg: #ffffff;
+
+  --model-btn-bg: #e9eef5;
+  --model-btn-border: #cbd5e1;
+  --model-btn-text: #1e293b;
+
+  --signout-btn-bg: #e2e8f0;
+  --signout-btn-border: #cbd5e1;
+  --signout-btn-color: #334155;
+
+  --toast-bg: #ffffff;
+  --toast-border: #dbe2ea;
+  --toast-text: #334155;
+
+  --empty-card-bg: #ffffff;
+  --empty-main-bg: #f8fafc;
+
+  --success: #16a34a;
+  --success-bg: rgba(22, 163, 74, 0.12);
+  --warning: #d97706;
+  --danger: #dc2626;
+}

@@ -1,0 +1,91 @@
+@use "./themes";
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto/static/Roboto-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto/static/Roboto-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto/static/Roboto-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto/static/Roboto-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto/static/Roboto-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  background: #0c0c0d;
+  color: #e2e8f0;
+  font-family: $font-sans;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+code,
+pre,
+button,
+input,
+textarea,
+select {
+  font-family: $font-sans;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

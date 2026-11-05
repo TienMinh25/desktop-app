@@ -1,0 +1,41 @@
+// Theme tokens mapped to CSS custom properties
+$bg-primary: var(--bg-primary);
+$bg-secondary: var(--bg-secondary);
+$bg-surface: var(--bg-surface);
+$bg-elevated: var(--bg-elevated);
+$bg-header: var(--bg-header);
+$bg-footer: var(--bg-footer);
+$border-color: var(--border-color);
+$border-subtle: var(--border-subtle);
+
+$text-primary: var(--text-primary);
+$text-body: var(--text-body);
+$text-secondary: var(--text-secondary);
+$text-muted: var(--text-muted);
+
+$accent-primary: var(--accent-primary);
+$accent-hover: var(--accent-hover);
+$accent-light: var(--accent-light);
+$accent-soft: var(--accent-soft);
+$text-on-accent: var(--text-on-accent);
+
+$success: var(--success);
+$success-bg: var(--success-bg);
+$warning: var(--warning);
+$danger: var(--danger);
+
+// Spacing
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+
+// Border Radius
+$radius-sm: 4px;
+$radius-md: 8px;
+$radius-lg: 12px;
+
+// Typography
+$font-sans: "Roboto", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+$font-mono: "Roboto", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;

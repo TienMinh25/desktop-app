@@ -1,0 +1,144 @@
+.footer {
+  padding: 10px 12px;
+  border-top: 1px solid $border-subtle;
+  background: $bg-footer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(0, 119, 238, 0.2);
+  border: 1px solid rgba(59, 158, 255, 0.28);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  :global([data-theme="light"]) & {
+    background: #e8f3ff;
+    border-color: #c4e2ff;
+    color: #0759ad;
+  }
+}
+
+.meta {
+  min-width: 0;
+}
+
+.username {
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.role {
+  font-size: 10.5px;
+  color: $text-muted;
+}
+
+.footerTools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.themeControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid $border-color;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+
+  :global([data-theme="light"]) & {
+    border-color: #dbe2ea;
+    background: #e9eef5;
+  }
+}
+
+.themeButton {
+  width: 23px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: $text-muted;
+  background: transparent;
+  cursor: pointer;
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  &:hover {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.08);
+
+    :global([data-theme="light"]) & {
+      background: #fff;
+    }
+  }
+
+  &.active {
+    color: #93c5fd;
+    background: rgba(0, 119, 238, 0.2);
+
+    :global([data-theme="light"]) & {
+      color: #0759ad;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+    }
+  }
+}
+
+.signoutButton {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--signout-btn-border);
+  border-radius: 7px;
+  color: var(--signout-btn-color);
+  background: var(--signout-btn-bg);
+  cursor: pointer;
+
+  svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  &:hover {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.09);
+
+    :global([data-theme="light"]) & {
+      color: #0f172a;
+      background: #d5dee9;
+      border-color: #b8c6d8;
+    }
+  }
+}

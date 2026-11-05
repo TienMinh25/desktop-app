@@ -1,0 +1,309 @@
+.sidebarTop {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 13px 9px 8px;
+  overflow: hidden;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px 7px;
+  color: $text-muted;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.newChatButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  border: 1px solid rgba(59, 158, 255, 0.25);
+  border-radius: 6px;
+  color: #93c5fd;
+  background: rgba(0, 119, 238, 0.1);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+
+  :global([data-theme="light"]) & {
+    color: #0759ad;
+  }
+
+  &:hover {
+    color: #fff;
+    background: rgba(0, 119, 238, 0.22);
+    border-color: rgba(59, 158, 255, 0.45);
+
+    :global([data-theme="light"]) & {
+      color: #0759ad;
+    }
+  }
+}
+
+.searchBox {
+  margin: 8px 2px 8px;
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: $text-muted;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 7px 10px 7px 30px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid $border-color;
+  border-radius: 6px;
+  font-size: 12px;
+  color: $text-primary;
+  outline: none;
+
+  :global([data-theme="light"]) & {
+    background: #fff;
+  }
+
+  &::placeholder {
+    color: $text-muted;
+  }
+}
+
+.projectTree {
+  flex: 1;
+  overflow-y: auto;
+  @include custom-scrollbar;
+}
+
+.projectEntry {
+  margin: 1px 0;
+}
+
+.projectEntryHead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.projectSelect {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: $text-secondary;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+    background: var(--item-hover-bg);
+  }
+}
+
+.projectFolderIcon {
+  flex: 0 0 14px;
+  color: $text-muted;
+}
+
+.projectName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.projectChildren {
+  margin: 2px 0 6px 14px;
+  padding-left: 4px;
+}
+
+.treeSessionRow {
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  color: $text-secondary;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease;
+
+  &:hover,
+  &.active {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.08);
+
+    :global([data-theme="light"]) & {
+      background: #e2e8f0;
+    }
+
+    .sessionActions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+.sessionChatIcon {
+  flex: 0 0 12px;
+  color: $text-muted;
+}
+
+.treeSessionCopy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.treeSessionTitle {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  line-height: 1.35;
+
+  &.marqueeActive {
+    width: max-content;
+    overflow: visible;
+    text-overflow: clip;
+    will-change: transform;
+    animation: sessionTitleMarquee var(--marquee-duration, 2.2s) ease-in-out infinite alternate;
+  }
+}
+
+@keyframes sessionTitleMarquee {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(var(--marquee-offset, 0px));
+  }
+}
+
+.sessionActions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+
+  &.menuOpen {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.sessionMoreButton {
+  width: 24px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: $text-secondary;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.1);
+
+    :global([data-theme="light"]) & {
+      background: rgba(15, 23, 42, 0.08);
+    }
+  }
+}
+
+.sessionContextMenu {
+  position: fixed;
+  width: 145px;
+  padding: 5px;
+  background: $bg-elevated;
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 200;
+  animation: fadeIn 0.12s ease;
+
+  :global([data-theme="light"]) & {
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  }
+}
+
+.sessionMenuItem {
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: $text-primary;
+  font-size: 12.5px;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+
+    :global([data-theme="light"]) & {
+      background: #eef2f7;
+    }
+  }
+
+  &.sessionMenuDelete {
+    color: #ef4444;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.12);
+    }
+  }
+}
+
+.sidebarEmpty {
+  padding: 7px 8px;
+  color: $text-muted;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
