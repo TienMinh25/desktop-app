@@ -1,6 +1,8 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
 import type { ReasoningEffort } from "../../constants"
+import type { ApprovalMode } from "../../../../contracts/permissions"
+import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../../../contracts/message-types"
 import { useProjectSessions } from "../../hooks/useProjectSessions"
 import type { Theme } from "../../theme/ThemeContext"
 import { ConversationStream } from "./components/ConversationStream"
@@ -14,6 +16,10 @@ interface WorkspacePageProps {
   onSignOut: () => void
   onShowToast: (message: string) => void
   onThemeChangeToast: (theme: Theme) => void
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled harness event: ${JSON.stringify(value)}`)
 }
 
 export function WorkspacePage({
@@ -40,16 +46,78 @@ export function WorkspacePage({
   } = useProjectSessions(assignedProjectIds)
 
   const [promptText, setPromptText] = useState("")
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const [turn, setTurn] = useState<{
+    requestId: string
+    sessionId: string
+    prompt: string
+    assistantText: string
+    isStreaming: boolean
+    error: string | null
+    permission: { id: string; tool: string; action: string; resource: string; reason: string } | null
+    question: { id: string; prompt: string; choices?: string[] } | null
+    todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }>
+    toolStatus: string | null
+  } | null>(null)
+  const activeRequestId = useRef<string | null>(null)
+
+  useEffect(() => {
+    return window.desktop.subscribeHarnessEvents((event) => {
+      if (event.type === HARNESS_EVENT_TYPES.PONG) return
+      if (event.requestId !== activeRequestId.current) return
+      switch (event.type) {
+        case HARNESS_EVENT_TYPES.ASSISTANT_DELTA:
+          setTurn((current) => current ? { ...current, assistantText: current.assistantText + event.text } : current)
+          return
+        case HARNESS_EVENT_TYPES.PERMISSION_REQUIRED:
+          setTurn((current) => current ? { ...current, permission: { id: event.permissionRequestId, tool: event.tool, action: event.action, resource: event.resource, reason: event.reason } } : current)
+          return
+        case HARNESS_EVENT_TYPES.PERMISSION_EXPIRED:
+          setTurn((current) => current ? { ...current, permission: null, error: "Permission request expired. The operation was denied." } : current)
+          return
+        case HARNESS_EVENT_TYPES.QUESTION_REQUIRED:
+          setTurn((current) => current ? { ...current, question: { id: event.questionRequestId, prompt: event.prompt, choices: event.choices } } : current)
+          return
+        case HARNESS_EVENT_TYPES.QUESTION_EXPIRED:
+          setTurn((current) => current ? { ...current, question: null, error: "The question timed out. The agent can continue without an answer." } : current)
+          return
+        case HARNESS_EVENT_TYPES.TODO_UPDATED:
+          setTurn((current) => current ? { ...current, todos: event.todos } : current)
+          return
+        case HARNESS_EVENT_TYPES.TOOL_STARTED:
+          setTurn((current) => current ? { ...current, toolStatus: `Running ${event.toolName}…` } : current)
+          return
+        case HARNESS_EVENT_TYPES.TOOL_COMPLETED:
+          setTurn((current) => current ? { ...current, toolStatus: null } : current)
+          return
+        case HARNESS_EVENT_TYPES.TOOL_FAILED:
+          setTurn((current) => current ? { ...current, toolStatus: `${event.toolName} failed: ${event.message}` } : current)
+          return
+        case HARNESS_EVENT_TYPES.CHAT_COMPLETED:
+          setTurn((current) => current ? { ...current, isStreaming: false } : current)
+          return
+        case HARNESS_EVENT_TYPES.CHAT_FAILED:
+          setTurn((current) => current ? { ...current, isStreaming: false, error: event.message } : current)
+          return
+        default:
+          return assertNever(event)
+      }
+    })
+  }, [])
 
   const handleNewChat = () => {
     createNewChat(selectedProjectId)
     setPromptText("")
   }
 
-  const handleSendPrompt = (model: string, effort: ReasoningEffort) => {
-    const trimmed = promptText.trim()
-    if (!trimmed || !currentProject) return
-    window.alert(`Prompt sent to [${model}] (${effort} reasoning):\n\n"${trimmed}"`)
+  const handleSendPrompt = (model: string, _effort: ReasoningEffort, approvalMode: ApprovalMode) => {
+    const prompt = promptText.trim()
+    if (!prompt || !activeSessionId) return
+    const requestId = crypto.randomUUID()
+    const sessionId = String(activeSessionId)
+    activeRequestId.current = requestId
+    setTurn({ requestId, sessionId, prompt, assistantText: "", isStreaming: true, error: null, permission: null, question: null, todos: [], toolStatus: null })
+    window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.CHAT_SUBMIT, requestId, sessionId, prompt, model, workspacePath: workspacePath ?? undefined, approvalMode })
     setPromptText("")
   }
 
@@ -76,12 +144,31 @@ export function WorkspacePage({
       onThemeChangeToast={onThemeChangeToast}
       sidebarContent={sidebarContent}
     >
-      {activeSession?.hasHistory ? (
+      {turn || activeSession?.hasHistory ? (
         <>
           <div className={styles.chatTopHeader}>
-            <span>{activeSession.title}</span>
+            <span>{activeSession?.title ?? "New chat"}</span>
           </div>
-          <ConversationStream onShowToast={onShowToast} />
+          {turn ? (
+            <ConversationStream
+              userPrompt={turn.prompt}
+              assistantText={turn.assistantText}
+              isStreaming={turn.isStreaming}
+              error={turn.error}
+              permission={turn.permission}
+              question={turn.question}
+              todos={turn.todos}
+              toolStatus={turn.toolStatus}
+              onPermissionDecision={(id, decision) => {
+                window.desktop.respondToPermission(id, decision)
+                setTurn((current) => current ? { ...current, permission: null } : current)
+              }}
+              onQuestionAnswer={(id, answer) => {
+                window.desktop.respondToQuestion(id, answer)
+                setTurn((current) => current ? { ...current, question: null } : current)
+              }}
+            />
+          ) : null}
         </>
       ) : (
         <div className={styles.centerGreeting}>
@@ -108,10 +195,11 @@ export function WorkspacePage({
       )}
 
       <PromptBar
-        workspaceName={currentProject?.name ?? "Workspace"}
         promptText={promptText}
         onPromptChange={setPromptText}
         onSendPrompt={handleSendPrompt}
+        isBusy={Boolean(turn?.isStreaming)}
+        onWorkspacePathChange={setWorkspacePath}
       />
     </MainLayout>
   )

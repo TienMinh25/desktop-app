@@ -1,5 +1,6 @@
-import { StrictMode, useState } from "react"
+import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
+import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/message-types"
 import styles from "./App.module.scss"
 import { TitleBar } from "./components/layout/TitleBar/TitleBar"
 import { APP_CONFIG } from "./constants"
@@ -15,6 +16,14 @@ function AppContent() {
     assignedProjects: string[]
   } | null>(null)
   const { toastMessage, showToast } = useToast()
+
+  useEffect(() => {
+    const unsubscribe = window.desktop.subscribeHarnessEvents((event) => {
+      if (event.type === HARNESS_EVENT_TYPES.PONG) showToast("Harness connected")
+    })
+    window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.PING, requestId: crypto.randomUUID() })
+    return unsubscribe
+  }, [showToast])
   const handleLoginSuccess = (username: string, assignedProjects: string[]) => {
     setAuthState({ username, assignedProjects })
   }

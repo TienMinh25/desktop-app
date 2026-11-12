@@ -2,12 +2,17 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "electron-vite"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+
 const root = dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig({
   main: {
     build: {
       lib: {
-        entry: resolve(root, "src/desktop/main/index.ts"),
+        entry: {
+          index: resolve(root, "src/desktop/main/index.ts"),
+          "harness-server": resolve(root, "src/harness-server/index.ts"),
+        },
       },
     },
   },

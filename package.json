@@ -8,22 +8,29 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^45.2.1",
+    "electron": "^45.2.3",
     "electron-vite": "^6.0.0",
     "sass": "^1.107.1",
     "typescript": "^7.0.2",
+    "undici-types": "^8.12.4",
     "vite": "^8.3.5"
   },
   "scripts": {
     "postinstall": "install-electron",
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev --entry ./out/main/index.js",
     "build": "electron-vite build",
     "build:win": "powershell -ExecutionPolicy Bypass -File scripts/build-win-portable.ps1",
     "preview": "electron-vite preview",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@vscode/ripgrep": "^1.18.0",
+    "diff": "^9.0.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "undici": "^8.12.4",
+    "zod": "^4.6.7"
   }
 }

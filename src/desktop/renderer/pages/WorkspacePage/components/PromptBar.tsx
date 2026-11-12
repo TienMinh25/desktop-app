@@ -1,4 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
+import type { ApprovalMode } from "../../../../../contracts/permissions"
 import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
@@ -11,10 +12,12 @@ import { useClickOutside } from "../../../hooks/useClickOutside"
 import styles from "./PromptBar.module.scss"
 
 interface PromptBarProps {
-  workspaceName?: string
   promptText: string
   onPromptChange: (value: string) => void
-  onSendPrompt: (model: string, effort: ReasoningEffort) => void
+  onSendPrompt: (model: string, effort: ReasoningEffort, 
+  approvalMode: ApprovalMode) => void
+  isBusy: boolean
+  onWorkspacePathChange: (path: string | null) => void
 }
 
 interface FolderItem {
@@ -23,6 +26,21 @@ interface FolderItem {
 }
 
 type ModelPopoverTab = "effort" | "models"
+
+const APPROVAL_MODE_STORAGE_KEY = "harness_approval_mode"
+
+function isApprovalMode(value: string | null): value is ApprovalMode {
+  return value === "manual" || value === "auto-safe" || value === "full-access"
+}
+
+function loadApprovalMode(): ApprovalMode {
+  try {
+    const saved = localStorage.getItem(APPROVAL_MODE_STORAGE_KEY)
+    return isApprovalMode(saved) ? saved : "manual"
+  } catch {
+    return "manual"
+  }
+}
 
 const SLIDER_THUMB_SIZE_PX = 28
 const SLIDER_THUMB_RADIUS_PX = SLIDER_THUMB_SIZE_PX / 2
@@ -51,9 +69,12 @@ export function PromptBar({
   promptText,
   onPromptChange,
   onSendPrompt,
+  isBusy,
+  onWorkspacePathChange,
 }: PromptBarProps) {
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)
   const [selectedEffort, setSelectedEffort] = useState<ReasoningEffort>(DEFAULT_EFFORT)
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>(loadApprovalMode)
   const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false)
   const [activePopoverTab, setActivePopoverTab] = useState<ModelPopoverTab>("effort")
   const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false)
@@ -72,6 +93,16 @@ export function PromptBar({
 
   const selectedEffortIndex = REASONING_EFFORTS.indexOf(selectedEffort)
   const sliderProgressRatio = selectedEffortIndex / (REASONING_EFFORTS.length - 1)
+
+  const handleApprovalModeChange = (value: string) => {
+    if (!isApprovalMode(value)) return
+    setApprovalMode(value)
+    try {
+      localStorage.setItem(APPROVAL_MODE_STORAGE_KEY, value)
+    } catch {
+      // Keep the current mode for this app session when browser storage is unavailable.
+    }
+  }
 
   const selectEffortByPointerX = (clientX: number, trackElement: HTMLDivElement) => {
     const trackRect = trackElement.getBoundingClientRect()
@@ -99,7 +130,7 @@ export function PromptBar({
   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      onSendPrompt(selectedModel, selectedEffort)
+      if (!isBusy) onSendPrompt(selectedModel, selectedEffort, approvalMode)
     }
   }
 
@@ -120,6 +151,7 @@ export function PromptBar({
       return updated
     })
     setSelectedFolder(folder)
+    onWorkspacePathChange(folder.path)
   }
 
   const handleOpenFolderDialog = async () => {
@@ -211,6 +243,20 @@ export function PromptBar({
 
             {/* Right: Model & Reasoning Effort Selector + Send */}
             <div className={styles.toolbarActions} ref={modelSelectorRef}>
+              <label className={styles.approvalModeLabel}>
+                <span className={styles.srOnly}>Approval mode</span>
+                <select
+                  className={styles.approvalModeSelect}
+                  value={approvalMode}
+                  onChange={(event) => handleApprovalModeChange(event.target.value)}
+                  title="Choose how harness operations are approved"
+                  aria-label="Approval mode"
+                >
+                  <option value="manual">Ask every time</option>
+                  <option value="auto-safe">Auto-approve safe operations</option>
+                  <option value="full-access">Full access</option>
+                </select>
+              </label>
               <button
                 type="button"
                 className={`${styles.modelSelectorButton} ${
@@ -242,7 +288,8 @@ export function PromptBar({
               <button
                 type="button"
                 className={styles.sendButton}
-                onClick={() => onSendPrompt(selectedModel, selectedEffort)}
+                onClick={() => onSendPrompt(selectedModel, selectedEffort, approvalMode)}
+                disabled={isBusy}
                 aria-label="Send prompt"
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -381,6 +428,7 @@ export function PromptBar({
                   className={styles.folderMenuItem}
                   onClick={() => {
                     setSelectedFolder(null)
+                    onWorkspacePathChange(null)
                     setIsFolderMenuOpen(false)
                   }}
                 >
@@ -420,6 +468,7 @@ export function PromptBar({
                         title={folderItem.path}
                         onClick={() => {
                           setSelectedFolder(folderItem)
+                          onWorkspacePathChange(folderItem.path)
                           setIsFolderMenuOpen(false)
                         }}
                       >
@@ -463,7 +512,7 @@ export function PromptBar({
               className={`${styles.folderTriggerButton} ${
                 isFolderMenuOpen ? styles.folderTriggerActive : ""
               }`}
-              title={selectedFolder?.path ?? "No folder selected"}
+              title={selectedFolder?.path ?? "Using your home directory; choose a folder to change it"}
               onClick={() => setIsFolderMenuOpen((prev) => !prev)}
             >
               <svg
@@ -480,7 +529,7 @@ export function PromptBar({
                   strokeLinejoin="round"
                 />
               </svg>
-              <span>{selectedFolder ? selectedFolder.name : "No folder"}</span>
+              <span>{selectedFolder ? selectedFolder.name : "Home directory"}</span>
             </button>
           </div>
         </div>

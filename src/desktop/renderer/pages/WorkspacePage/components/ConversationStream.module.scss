@@ -64,6 +64,89 @@
   gap: 6px;
 }
 
+.permissionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 680px;
+  padding: 14px;
+  border: 1px solid var(--user-bubble-border);
+  border-radius: 10px;
+  background: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+  font-size: 12px;
+  code { overflow-wrap: anywhere; }
+}
+
+.permissionActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  button { cursor: pointer; padding: 6px 12px; }
+}
+
+.questionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+  padding: 14px;
+  border: 1px solid $border-color;
+  border-radius: 10px;
+  background: $bg-surface;
+  color: $text-body;
+  font-size: 12.5px;
+}
+
+.questionChoices,
+.questionForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.questionChoices button,
+.questionForm button {
+  cursor: pointer;
+  padding: 7px 12px;
+  border: 1px solid $border-color;
+  border-radius: 7px;
+  background: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+}
+
+.questionForm textarea {
+  flex: 1 1 100%;
+  min-height: 64px;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 1px solid $border-color;
+  border-radius: 7px;
+  background: $bg-surface;
+  color: $text-body;
+  font: inherit;
+}
+
+.questionForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.todoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: fit-content;
+  min-width: 240px;
+  padding: 12px 14px;
+  border: 1px solid var(--user-bubble-border);
+  border-radius: 10px;
+  color: var(--user-bubble-text);
+  font-size: 12px;
+}
+
+.todoPending { opacity: 0.65; }
+
 .assistantCopyText {
   font-size: 13px;
   color: $text-body;

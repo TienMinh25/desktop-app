@@ -1,7 +1,54 @@
 import { basename } from "node:path"
+import { join } from "node:path"
+import { mkdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain, screen } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, screen, utilityProcess, type UtilityProcess } from "electron"
+import { HARNESS_COMMAND_TYPES } from "../../contracts/message-types"
+import { PermissionResponseCommandSchema, QuestionResponseCommandSchema } from "../../contracts/commands"
+import type { HarnessEvent } from "../../contracts/events"
+import { isHarnessCommand } from "../../contracts/guards"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
+
+let harnessProcess: UtilityProcess | null = null
+
+function startHarnessProcess() {
+    const entryPath = fileURLToPath(new URL("./harness-server.js", import.meta.url))
+    harnessProcess = utilityProcess.fork(entryPath, [], {
+        serviceName: "Ccodex Harness",
+    })
+    harnessProcess.on("message", (event: HarnessEvent) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event)
+        }
+    })
+}
+
+function forwardHarnessCommand(command: unknown) {
+    if (!harnessProcess) return
+    harnessProcess.postMessage(command)
+}
+
+ipcMain.on(IPC_CHANNELS.HARNESS_COMMAND, (event, command: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || !isHarnessCommand(command) || command.type === HARNESS_COMMAND_TYPES.PERMISSION_RESPOND || command.type === HARNESS_COMMAND_TYPES.QUESTION_RESPOND) return
+    if (!harnessProcess) throw new Error("Harness process is not running")
+    forwardHarnessCommand(command)
+})
+ipcMain.on(IPC_CHANNELS.PERMISSION_RESPONSE, (event, response: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return
+    const payload = response && typeof response === "object" && !Array.isArray(response) ? response : {}
+    const parsed = PermissionResponseCommandSchema.safeParse({ ...payload, type: HARNESS_COMMAND_TYPES.PERMISSION_RESPOND })
+    if (!parsed.success) return
+    forwardHarnessCommand(parsed.data)
+})
+ipcMain.on(IPC_CHANNELS.QUESTION_RESPONSE, (event, response: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return
+    const payload = response && typeof response === "object" && !Array.isArray(response) ? response : {}
+    const parsed = QuestionResponseCommandSchema.safeParse({ ...payload, type: HARNESS_COMMAND_TYPES.QUESTION_RESPOND })
+    if (!parsed.success) return
+    forwardHarnessCommand(parsed.data)
+})
+
+
 function createWindow() {
     const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
     const width = Math.max(1100, Math.min(1440, Math.round(screenWidth * 0.8)))
@@ -57,7 +104,10 @@ ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (event) => {
         path: folderPath,
     }
 })
-app.whenReady().then(() => {
+
+app.whenReady().then(async () => {
+    await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
+    startHarnessProcess()
     createWindow()
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -66,6 +116,8 @@ app.whenReady().then(() => {
     })
 })
 app.on("window-all-closed", () => {
+    harnessProcess?.kill()
+    harnessProcess = null
     if (process.platform !== "darwin") {
         app.quit()
     }
