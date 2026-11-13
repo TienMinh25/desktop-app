@@ -7,4 +7,10 @@ export const IPC_CHANNELS = {
   HARNESS_EVENT: "harness:event",
   PERMISSION_RESPONSE: "permission:response",
   QUESTION_RESPONSE: "question:response",
+  MCP_LIST_SERVERS: "mcp:list-servers",
+  MCP_GET_SERVER_VERSION: "mcp:get-server-version",
+  UPDATER_CHECK: "updater:check",
+  UPDATER_START: "updater:start",
+  UPDATER_INSTALL: "updater:install",
+  UPDATER_STATUS: "updater:status",
 } as const

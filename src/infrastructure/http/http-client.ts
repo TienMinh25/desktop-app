@@ -7,6 +7,16 @@ export type UndiciFetch = (input: RequestInfo, init?: RequestInit) => Promise<Un
 export class HttpClient {
   constructor(private readonly fetchImpl: UndiciFetch = undiciFetch) {}
 
+  async getJson<T>(url: string, headers: UndiciHeadersInit = {}, signal?: AbortSignal): Promise<T> {
+    const response = await this.fetchImpl(url, {
+      method: "GET",
+      headers: { Accept: "application/json", ...Object.fromEntries(new UndiciHeaders(headers).entries()) },
+      signal,
+    })
+    if (!response.ok) throw new Error(`HTTP request returned ${response.status}: ${await response.text()}`)
+    return await response.json() as T
+  }
+
   async postJson<T>(url: string, body: unknown, headers: UndiciHeadersInit = {}, signal?: AbortSignal): Promise<T> {
     const response = await this.fetchImpl(url, {
       method: "POST",

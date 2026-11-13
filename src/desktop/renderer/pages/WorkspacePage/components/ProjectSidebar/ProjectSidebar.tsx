@@ -1,6 +1,6 @@
 import { useRef, useState, type MouseEvent } from "react"
-import type { ChatSession, ProjectItem } from "../../../data/mockData"
-import { useClickOutside } from "../../../hooks/useClickOutside"
+import type { ChatSession, ProjectItem } from "../../../../data/mockData"
+import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
 
 interface ProjectSidebarProps {
@@ -9,6 +9,8 @@ interface ProjectSidebarProps {
   sessions: ChatSession[]
   activeSessionId: number | null
   expandedProjects: Record<string, boolean>
+  isCustomizeActive?: boolean
+  onSelectCustomize?: () => void
   onSelectProject: (projectId: string) => void
   onToggleExpandProject: (projectId: string) => void
   onSelectSession: (sessionId: number) => void
@@ -29,6 +31,8 @@ export function ProjectSidebar({
   sessions,
   activeSessionId,
   expandedProjects,
+  isCustomizeActive = false,
+  onSelectCustomize,
   onSelectProject,
   onToggleExpandProject,
   onSelectSession,
@@ -70,6 +74,20 @@ export function ProjectSidebar({
 
   return (
     <div className={styles.sidebarTop}>
+      <button
+        type="button"
+        className={`${styles.customizeNavBtn} ${isCustomizeActive ? styles.customizeActive : ""}`}
+        onClick={onSelectCustomize}
+      >
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.35" />
+          <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.35" />
+          <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.35" />
+          <path d="M11.5 9.2v4.6M9.2 11.5h4.6" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+        </svg>
+        <span>Customize</span>
+      </button>
+
       <div className={styles.sectionHead}>
         <span>Projects</span>
         <button

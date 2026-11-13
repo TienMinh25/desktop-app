@@ -1,5 +1,7 @@
 {
   "name": "desktop-app",
+  "version": "1.0.0",
+  "description": "C-CodeX Desktop Application",
   "main": "./out/main/index.js",
   "type": "module",
   "private": true,
@@ -9,6 +11,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "sass": "^1.107.1",
     "typescript": "^7.0.2",
@@ -19,7 +22,8 @@
     "postinstall": "install-electron",
     "dev": "electron-vite dev --entry ./out/main/index.js",
     "build": "electron-vite build",
-    "build:win": "powershell -ExecutionPolicy Bypass -File scripts/build-win-portable.ps1",
+    "build:win": "electron-vite build && node --use-system-ca ./node_modules/electron-builder/cli.js --win",
+    "build:mac": "electron-vite build && node --use-system-ca ./node_modules/electron-builder/cli.js --mac",
     "preview": "electron-vite preview",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
@@ -28,9 +32,13 @@
     "@modelcontextprotocol/client": "^2.4.0",
     "@vscode/ripgrep": "^1.18.0",
     "diff": "^9.0.0",
+    "electron-updater": "^6.8.11",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "undici": "^8.12.4",
     "zod": "^4.6.7"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }

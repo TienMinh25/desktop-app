@@ -7,6 +7,54 @@
   overflow: hidden;
 }
 
+.customizeNavBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: $text-secondary;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease, color 0.14s ease;
+
+  svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    color: $text-muted;
+    transition: color 0.14s ease;
+  }
+
+  &:hover {
+    color: $text-primary;
+    background: var(--item-hover-bg);
+
+    svg {
+      color: $text-primary;
+    }
+  }
+
+  &.customizeActive {
+    color: $text-primary;
+    background: rgba(255, 255, 255, 0.1);
+
+    svg {
+      color: $text-primary;
+    }
+
+    :global([data-theme="light"]) & {
+      background: #e2e8f0;
+    }
+  }
+}
+
 .sectionHead {
   display: flex;
   align-items: center;

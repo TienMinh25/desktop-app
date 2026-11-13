@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { APP_CONFIG } from "../../../constants"
 import { useClickOutside } from "../../../hooks/useClickOutside"
 import { useTheme } from "../../../theme/ThemeContext"
@@ -14,17 +14,50 @@ export function TitleBar({ title = APP_CONFIG.APP_TITLE, onShowToast }: TitleBar
   const isLight = theme === "light"
   const [panelOpen, setPanelOpen] = useState(false)
   const [updateState, setUpdateState] = useState<"idle" | "starting" | "started">("idle")
+  const [updateVersion, setUpdateVersion] = useState<string>(APP_CONFIG.UPDATE_VERSION)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(wrapRef, () => setPanelOpen(false))
 
-  const handleStartUpdate = () => {
+  useEffect(() => {
+    if (!window.desktop?.subscribeUpdaterStatus) return
+    return window.desktop.subscribeUpdaterStatus((state) => {
+      if (state.status === "available") {
+        setUpdateVersion(state.version)
+      } else if (state.status === "downloading") {
+        setUpdateState("starting")
+      } else if (state.status === "downloaded") {
+        setUpdateVersion(state.version)
+        setUpdateState("started")
+        onShowToast(`Version ${state.version} downloaded. Ready to restart and install.`)
+      } else if (state.status === "error") {
+        setUpdateState("idle")
+        onShowToast(`Update check failed: ${state.message}`)
+      }
+    })
+  }, [onShowToast])
+
+  const handleStartUpdate = async () => {
+    if (updateState === "started") {
+      window.desktop?.installDownloadedUpdate?.()
+      return
+    }
     setUpdateState("starting")
     setPanelOpen(false)
     onShowToast("Update started. C-CodeX will restart after installation.")
-    setTimeout(() => {
-      setUpdateState("started")
-    }, 500)
+    try {
+      if (window.desktop?.startUpdateDownload) {
+        await window.desktop.startUpdateDownload()
+      } else {
+        setTimeout(() => {
+          setUpdateState("started")
+        }, 500)
+      }
+    } catch {
+      setTimeout(() => {
+        setUpdateState("started")
+      }, 500)
+    }
   }
 
   return (
@@ -75,25 +108,25 @@ export function TitleBar({ title = APP_CONFIG.APP_TITLE, onShowToast }: TitleBar
               <div>
                 <strong>New version available</strong>
                 <p>
-                  {APP_CONFIG.APP_TITLE} {APP_CONFIG.UPDATE_VERSION} is ready. Install the latest
+                  {APP_CONFIG.APP_TITLE} {updateVersion} is ready. Install the latest
                   app updates now.
                 </p>
                 <span className={styles.updateVersion}>
-                  Version {APP_CONFIG.UPDATE_VERSION} · {APP_CONFIG.UPDATE_SIZE}
+                  Version {updateVersion} · {APP_CONFIG.UPDATE_SIZE}
                 </span>
               </div>
             </div>
             <button
               className={styles.updateNowButton}
               type="button"
-              disabled={updateState !== "idle"}
-              onClick={handleStartUpdate}
+              disabled={updateState === "starting"}
+              onClick={() => void handleStartUpdate()}
             >
               {updateState === "idle"
                 ? "Update now"
                 : updateState === "starting"
                   ? "Starting update…"
-                  : "Update started"}
+                  : "Restart & install"}
             </button>
           </div>
         )}

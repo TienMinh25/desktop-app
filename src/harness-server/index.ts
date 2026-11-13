@@ -3,6 +3,7 @@ import type { HarnessEvent } from "../contracts/events"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../contracts/message-types"
 import { isHarnessCommand } from "../contracts/guards"
 import { ChatClient } from "../domain/chat/chat-client"
+import { API_CONFIG } from "../infrastructure/config/api-config"
 import { HarnessRuntime } from "../harness/runtime"
 import { PermissionManager } from "../harness/permissions/permission-manager"
 import { QuestionManager } from "../harness/interaction/question-manager"
@@ -45,9 +46,9 @@ const runtime = new HarnessRuntime({
   askUser(question) { return questions.ask(question) },
   // Creates the ChatModel adapter for the selected model using the configured company endpoint.
   createChatModel(modelName) {
-    const endpoint = process.env.CHAT_COMPLETIONS_URL
+    const endpoint = API_CONFIG.CHAT_COMPLETIONS_URL
     if (!endpoint) throw new Error("CHAT_COMPLETIONS_URL is not configured")
-    return new ChatClient({ endpoint, model: modelName, accessToken: process.env.CHAT_ACCESS_TOKEN ?? "YOUR_JWT_ACCESS_TOKEN" })
+    return new ChatClient({ endpoint, model: modelName, accessToken: API_CONFIG.CHAT_ACCESS_TOKEN })
   },
   createExecutionEnvironment(workspacePath) { return new LocalExecutionEnvironment(workspacePath) },
   // Lazily connects configured MCP servers and registers their tools before the model sees tool definitions.
