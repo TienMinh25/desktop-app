@@ -3,13 +3,68 @@ import { join } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { app, BrowserWindow, dialog, ipcMain, screen, utilityProcess, type UtilityProcess } from "electron"
+import electronUpdater from "electron-updater"
 import { HARNESS_COMMAND_TYPES } from "../../contracts/message-types"
 import { PermissionResponseCommandSchema, QuestionResponseCommandSchema } from "../../contracts/commands"
 import type { HarnessEvent } from "../../contracts/events"
 import { isHarnessCommand } from "../../contracts/guards"
+import type { McpListServersParams } from "../../contracts/mcp-registry"
+import type { AppUpdaterState } from "../../contracts/updater"
+import { McpRegistryClient } from "../../domain/mcp-registry/mcp-registry-client"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 
+const { autoUpdater } = electronUpdater
+
 let harnessProcess: UtilityProcess | null = null
+const mcpRegistryClient = new McpRegistryClient()
+
+function broadcastUpdaterState(state: AppUpdaterState) {
+    for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.UPDATER_STATUS, state)
+    }
+}
+
+function setupAutoUpdater() {
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on("checking-for-update", () => {
+        broadcastUpdaterState({ status: "checking" })
+    })
+    autoUpdater.on("update-available", (info) => {
+        broadcastUpdaterState({
+            status: "available",
+            version: info.version,
+            releaseDate: info.releaseDate,
+        })
+    })
+    autoUpdater.on("update-not-available", (info) => {
+        broadcastUpdaterState({
+            status: "not-available",
+            version: info?.version,
+        })
+    })
+    autoUpdater.on("download-progress", (progress) => {
+        broadcastUpdaterState({
+            status: "downloading",
+            percent: Math.round(progress.percent),
+            transferred: progress.transferred,
+            total: progress.total,
+        })
+    })
+    autoUpdater.on("update-downloaded", (info) => {
+        broadcastUpdaterState({
+            status: "downloaded",
+            version: info.version,
+        })
+    })
+    autoUpdater.on("error", (err) => {
+        broadcastUpdaterState({
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+        })
+    })
+}
 
 function startHarnessProcess() {
     const entryPath = fileURLToPath(new URL("./harness-server.js", import.meta.url))
@@ -104,9 +159,45 @@ ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (event) => {
         path: folderPath,
     }
 })
+ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
+    return await mcpRegistryClient.listServers(params ?? {})
+})
+ipcMain.handle(
+    IPC_CHANNELS.MCP_GET_SERVER_VERSION,
+    async (_event, payload: { serverName: string; version?: string }) => {
+        return await mcpRegistryClient.getServerVersion(payload.serverName, payload.version ?? "latest")
+    },
+)
+ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
+    if (!app.isPackaged) {
+        return { status: "available", version: "1.2.0" } satisfies AppUpdaterState
+    }
+    const result = await autoUpdater.checkForUpdates()
+    return {
+        status: result?.updateInfo ? "available" : "not-available",
+        version: result?.updateInfo?.version ?? app.getVersion(),
+    } satisfies AppUpdaterState
+})
+ipcMain.handle(IPC_CHANNELS.UPDATER_START, async () => {
+    if (!app.isPackaged) {
+        broadcastUpdaterState({ status: "downloading", percent: 45, transferred: 38, total: 84 })
+        setTimeout(() => {
+            broadcastUpdaterState({ status: "downloaded", version: "1.2.0" })
+        }, 600)
+        return { started: true }
+    }
+    await autoUpdater.downloadUpdate()
+    return { started: true }
+})
+ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
+    if (app.isPackaged) {
+        autoUpdater.quitAndInstall()
+    }
+})
 
 app.whenReady().then(async () => {
     await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
+    setupAutoUpdater()
     startHarnessProcess()
     createWindow()
     app.on("activate", () => {

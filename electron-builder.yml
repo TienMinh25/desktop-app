@@ -1,0 +1,37 @@
+appId: com.cmcglobal.ccodex.desktop
+productName: C-CodeX Desktop
+directories:
+  buildResources: build
+  output: release
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!docs/*"
+  - "!tests/*"
+  - "!scripts/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!tsconfig*.json"
+asarUnpack:
+  - "**/*.node"
+  - "**/node_modules/@vscode/ripgrep/**"
+win:
+  executableName: C-CodeX Desktop
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+    - target: zip
+dmg:
+  artifactName: ${name}-${version}.${ext}
+publish:
+  provider: generic
+  url: https://updates.ccodex.com/releases

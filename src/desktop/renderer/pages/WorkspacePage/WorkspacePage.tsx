@@ -5,9 +5,10 @@ import type { ApprovalMode } from "../../../../contracts/permissions"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../../../contracts/message-types"
 import { useProjectSessions } from "../../hooks/useProjectSessions"
 import type { Theme } from "../../theme/ThemeContext"
-import { ConversationStream } from "./components/ConversationStream"
-import { ProjectSidebar } from "./components/ProjectSidebar"
-import { PromptBar } from "./components/PromptBar"
+import { ConversationStream } from "./components/ConversationStream/ConversationStream"
+import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
+import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
+import { PromptBar } from "./components/PromptBar/PromptBar"
 import styles from "./WorkspacePage.module.scss"
 
 interface WorkspacePageProps {
@@ -47,6 +48,7 @@ export function WorkspacePage({
 
   const [promptText, setPromptText] = useState("")
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
   const [turn, setTurn] = useState<{
     requestId: string
     sessionId: string
@@ -106,8 +108,19 @@ export function WorkspacePage({
   }, [])
 
   const handleNewChat = () => {
+    setIsCustomizeOpen(false)
     createNewChat(selectedProjectId)
     setPromptText("")
+  }
+
+  const handleSelectProject = (projectId: string) => {
+    setIsCustomizeOpen(false)
+    selectProject(projectId)
+  }
+
+  const handleSelectSession = (sessionId: number) => {
+    setIsCustomizeOpen(false)
+    selectSession(sessionId)
   }
 
   const handleSendPrompt = (model: string, _effort: ReasoningEffort, approvalMode: ApprovalMode) => {
@@ -124,13 +137,15 @@ export function WorkspacePage({
   const sidebarContent = (
     <ProjectSidebar
       projects={assignedProjects}
-      selectedProjectId={selectedProjectId}
+      selectedProjectId={isCustomizeOpen ? null : selectedProjectId}
       sessions={sessions}
-      activeSessionId={activeSessionId}
+      activeSessionId={isCustomizeOpen ? null : activeSessionId}
       expandedProjects={expandedProjects}
-      onSelectProject={selectProject}
+      isCustomizeActive={isCustomizeOpen}
+      onSelectCustomize={() => setIsCustomizeOpen(true)}
+      onSelectProject={handleSelectProject}
       onToggleExpandProject={toggleExpandProject}
-      onSelectSession={selectSession}
+      onSelectSession={handleSelectSession}
       onNewChat={handleNewChat}
       onRenameSession={renameSession}
       onDeleteSession={deleteSession}
@@ -144,63 +159,69 @@ export function WorkspacePage({
       onThemeChangeToast={onThemeChangeToast}
       sidebarContent={sidebarContent}
     >
-      {turn || activeSession?.hasHistory ? (
-        <>
-          <div className={styles.chatTopHeader}>
-            <span>{activeSession?.title ?? "New chat"}</span>
-          </div>
-          {turn ? (
-            <ConversationStream
-              userPrompt={turn.prompt}
-              assistantText={turn.assistantText}
-              isStreaming={turn.isStreaming}
-              error={turn.error}
-              permission={turn.permission}
-              question={turn.question}
-              todos={turn.todos}
-              toolStatus={turn.toolStatus}
-              onPermissionDecision={(id, decision) => {
-                window.desktop.respondToPermission(id, decision)
-                setTurn((current) => current ? { ...current, permission: null } : current)
-              }}
-              onQuestionAnswer={(id, answer) => {
-                window.desktop.respondToQuestion(id, answer)
-                setTurn((current) => current ? { ...current, question: null } : current)
-              }}
-            />
-          ) : null}
-        </>
+      {isCustomizeOpen ? (
+        <CustomizePanel onShowToast={onShowToast} />
       ) : (
-        <div className={styles.centerGreeting}>
-          <svg
-            className={styles.cloudIcon}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-          >
-            <path
-              d="M6.5 18C4 18 2 16 2 13.5C2 11.2 3.6 9.3 5.8 9C6.4 5.6 9.4 3 13 3C17.1 3 20.5 6.1 20.9 10.1C21.6 10.6 22 11.5 22 12.5C22 14.4 20.4 16 18.5 16H18"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M9 13l2-2-2-2M15 13l-2-2 2-2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <h1 className={styles.heroTitle}>What should we build?</h1>
-        </div>
-      )}
+        <>
+          {turn || activeSession?.hasHistory ? (
+            <>
+              <div className={styles.chatTopHeader}>
+                <span>{activeSession?.title ?? "New chat"}</span>
+              </div>
+              {turn ? (
+                <ConversationStream
+                  userPrompt={turn.prompt}
+                  assistantText={turn.assistantText}
+                  isStreaming={turn.isStreaming}
+                  error={turn.error}
+                  permission={turn.permission}
+                  question={turn.question}
+                  todos={turn.todos}
+                  toolStatus={turn.toolStatus}
+                  onPermissionDecision={(id, decision) => {
+                    window.desktop.respondToPermission(id, decision)
+                    setTurn((current) => current ? { ...current, permission: null } : current)
+                  }}
+                  onQuestionAnswer={(id, answer) => {
+                    window.desktop.respondToQuestion(id, answer)
+                    setTurn((current) => current ? { ...current, question: null } : current)
+                  }}
+                />
+              ) : null}
+            </>
+          ) : (
+            <div className={styles.centerGreeting}>
+              <svg
+                className={styles.cloudIcon}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path
+                  d="M6.5 18C4 18 2 16 2 13.5C2 11.2 3.6 9.3 5.8 9C6.4 5.6 9.4 3 13 3C17.1 3 20.5 6.1 20.9 10.1C21.6 10.6 22 11.5 22 12.5C22 14.4 20.4 16 18.5 16H18"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M9 13l2-2-2-2M15 13l-2-2 2-2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <h1 className={styles.heroTitle}>What should we build?</h1>
+            </div>
+          )}
 
-      <PromptBar
-        promptText={promptText}
-        onPromptChange={setPromptText}
-        onSendPrompt={handleSendPrompt}
-        isBusy={Boolean(turn?.isStreaming)}
-        onWorkspacePathChange={setWorkspacePath}
-      />
+          <PromptBar
+            promptText={promptText}
+            onPromptChange={setPromptText}
+            onSendPrompt={handleSendPrompt}
+            isBusy={Boolean(turn?.isStreaming)}
+            onWorkspacePathChange={setWorkspacePath}
+          />
+        </>
+      )}
     </MainLayout>
   )
 }

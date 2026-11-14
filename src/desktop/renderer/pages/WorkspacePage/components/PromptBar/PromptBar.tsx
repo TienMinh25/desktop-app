@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
-import type { ApprovalMode } from "../../../../../contracts/permissions"
+import type { ApprovalMode } from "../../../../../../contracts/permissions"
 import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
@@ -7,8 +7,8 @@ import {
   REASONING_EFFORTS,
   STORAGE_KEYS,
   type ReasoningEffort,
-} from "../../../constants"
-import { useClickOutside } from "../../../hooks/useClickOutside"
+} from "../../../../constants"
+import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./PromptBar.module.scss"
 
 interface PromptBarProps {
