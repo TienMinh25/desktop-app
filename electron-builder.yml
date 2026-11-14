@@ -16,6 +16,7 @@ asarUnpack:
   - "**/node_modules/@vscode/ripgrep/**"
 win:
   executableName: C-CodeX Desktop
+  icon: build/cmc_logo.ico
   target:
     - target: nsis
       arch:
@@ -26,6 +27,7 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  icon: build/cmc_logo.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
