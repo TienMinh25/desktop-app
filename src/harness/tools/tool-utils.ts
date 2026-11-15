@@ -16,5 +16,5 @@ export function permissionRequest(tool: string, action: string, resource: string
 }
 
 export function definition(name: string, description: string, properties: Record<string, unknown>, required: string[]) {
-  return { type: "function" as const, function: { name, description, parameters: { type: "object", properties, required, additionalProperties: false } } }
+  return { type: "function" as const, name, description, parameters: { type: "object", properties, required, additionalProperties: false }, strict: false }
 }

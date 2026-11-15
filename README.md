@@ -1,6 +1,6 @@
 # Desktop Coding Harness
 
-An Electron desktop coding assistant backed by a local harness process. The desktop UI talks to the harness over a local process boundary. The planned backend integration uses the company's shared chat API with an OpenAI Chat Completions compatible request schema and an app-issued access token in the `Authorization: Bearer <access_token>` header. Login and token handling have not been implemented yet.
+An Electron desktop coding assistant backed by a local harness process. The desktop UI talks to the harness over a local process boundary. The backend integration uses the company's shared OpenAI Responses API-compatible endpoint and an app-issued access token in the `Authorization: Bearer <access_token>` header. Login and token handling have not been implemented yet.
 
 The project uses one repository, one root `package.json`, and Bun. The harness is a separate runtime process, but it is not a separate package or workspace.
 
@@ -16,7 +16,7 @@ Harness process
     └── company domain client ──→ company backend
 ```
 
-The Electron main process owns desktop lifecycle and starts/stops the harness process. It forwards commands and events between the renderer and harness. The harness does not import Electron or UI code. Once auth is connected, chat requests will go from the harness to the company's shared chat API using the OpenAI Chat Completions request schema and a Bearer access token; streamed response events will travel back through the harness to the UI. There is no static API key in the intended app/backend contract.
+The Electron main process owns desktop lifecycle and starts/stops the harness process. It forwards commands and events between the renderer and harness. The harness does not import Electron or UI code. Chat requests go from the harness to the company's shared Responses API-compatible endpoint using a Bearer access token; streamed response events travel back through the harness to the UI. There is no static API key in the intended app/backend contract.
 
 ## Folder Structure
 
@@ -41,7 +41,7 @@ src/
     index.ts           # Separate-process entrypoint; starts the harness runtime
   domain/
     auth/               # (planned) Login and credential handling for the company backend
-    chat/               # OpenAI Chat Completions compatible client and streaming
+    chat/               # OpenAI Responses compatible client and streaming
   contracts/
     commands.ts         # Commands exchanged between desktop and harness
     events.ts           # Typed events streamed from harness to desktop
@@ -81,15 +81,15 @@ Follow the course outline, keeping the desktop-specific setup and IPC boundary e
 The local harness process inherits its environment from Electron. For the current unauthenticated prototype, configure the chat endpoint before starting the app:
 
 ```sh
-CHAT_COMPLETIONS_URL="https://your-company.example/v1/chat/completions" \
+RESPONSES_API_URL="https://your-company.example/v1/responses" \
 bun run dev
 ```
 
-`CHAT_COMPLETIONS_URL` is the full shared chat API endpoint. The harness sends `Authorization: Bearer <access_token>` using `CHAT_ACCESS_TOKEN`; until the auth integration contract is supplied, it falls back to the placeholder `YOUR_JWT_ACCESS_TOKEN`. Replace the placeholder with the app-issued JWT flow when login/token handling is implemented. Never put credentials in renderer code or commit real values. The app currently uses the selected model name from the prompt bar. Global skills are discovered only under `~/.ccodex/skills/<name>/SKILL.md`; the app creates `~/.ccodex` at startup and creates `skills/` when the skill tool is used. MCP stdio servers can be configured with `MCP_SERVERS` as a JSON array of `{ "name", "command", "args", "env", "cwd" }` entries; each MCP tool call requires approval. LSP servers can be configured with `LSP_SERVERS` as a JSON array of `{ "extensions", "command", "args", "languageId", "cwd", "env" }` entries; they use standard LSP stdio framing and require approval per query. Ordered permission overrides can be configured in `HARNESS_PERMISSION_RULES` as a JSON array, for example `[{"tool":"bash","pattern":"git status*","decision":"allow"}]`.
+`RESPONSES_API_URL` is the full Responses API endpoint. For compatibility, the deprecated `CHAT_COMPLETIONS_URL` setting is accepted and its trailing `/chat/completions` path is changed to `/responses`. The harness sends `Authorization: Bearer <access_token>` using `CHAT_ACCESS_TOKEN`; until the auth integration contract is supplied, it falls back to the placeholder `YOUR_JWT_ACCESS_TOKEN`. Replace the placeholder with the app-issued JWT flow when login/token handling is implemented. Never put credentials in renderer code or commit real values. The app currently uses the selected model name from the prompt bar. Global skills are discovered only under `~/.ccodex/skills/<name>/SKILL.md`; the app creates `~/.ccodex` at startup and creates `skills/` when the skill tool is used. MCP stdio servers can be configured with `MCP_SERVERS` as a JSON array of `{ "name", "command", "args", "env", "cwd" }` entries; each MCP tool call requires approval. LSP servers can be configured with `LSP_SERVERS` as a JSON array of `{ "extensions", "command", "args", "languageId", "cwd", "env" }` entries; they use standard LSP stdio framing and require approval per query. Ordered permission overrides can be configured in `HARNESS_PERMISSION_RULES` as a JSON array, for example `[{"tool":"bash","pattern":"git status*","decision":"allow"}]`.
 
 Workspace selection is optional; without a picked folder the harness uses the current user's home directory as its execution root. The prompt bar offers **Ask every time** (default), **Auto-approve safe operations**, and **Full access**. These user approval modes are separate from the internal `allow` / `ask` / `deny` policy; explicit deny rules always block. The harness registers file, search, shell, patch, web fetch, LSP, skill, todo, and configured MCP tools. The loop sends each tool result back to the model and continues until the model returns a normal answer without tool calls. There is currently no fixed tool-round limit or prompt-cancellation command. IPC commands are validated at runtime with Zod schemas.
 
-Conversation history is behind a `ConversationStore` interface with a process-memory adapter. Restarting the app clears sessions until the SQLite schema is provided. Permission approvals are application-level checks; they do not isolate the process from the host OS. `read` returns pages of up to 2,000 lines / about 50 KB and accepts a line offset to continue; files above 20 MB are rejected. `write` creates missing parent directories. Bash defaults to 120 seconds and returns at most 50,000 output bytes; webfetch downloads up to 5 MiB and returns at most 50 KiB to the model. LSP and MCP require external servers configured by environment variables; MCP currently supports local stdio and the 2025-11-25 handshake. Run harness unit tests with `bun test`.
+Conversation history is behind a `ConversationStore` interface with a process-memory adapter. Restarting the app clears sessions until the SQLite schema is provided. Permission approvals are application-level checks; they do not isolate the process from the host OS. `read` returns UTF-8 text pages of up to 2,000 lines / 100 KB, supports continuation offsets, and rejects text files above 20,000,000 bytes. It also returns supported images and documents as Responses content parts; see `docs/tools.md` for formats and limits. `write` creates missing parent directories. Bash defaults to 120 seconds and returns at most 50,000 output bytes; webfetch downloads up to 5 MiB and returns at most 50 KiB to the model. LSP and MCP require external servers configured by environment variables; MCP currently supports local stdio and the 2025-11-25 handshake. Run harness unit tests with `bun test`.
 
 ### Code walkthrough
 
@@ -128,7 +128,7 @@ The target is a desktop coding harness with a separate headless harness process,
 - **Filesystem/tools:** allow approved reads outside workspace; use descriptor validation for reads; writes can create parent directories. Keep `read`, `write`, `edit`, `bash`, `apply_patch`; use ripgrep for glob/grep. Bash limits are 120 sec / 50 KB. Webfetch limits are 5 MiB download / 50 KiB returned text.
 - **IPC/schema:** use Zod at runtime boundaries, shared constants for discriminants, base event interfaces, and exhaustive `assertNever` handlers. Keep permission/question response IPC channels; main owns the command `type` and validates the complete command.
 - **MCP/LSP:** use a library for MCP, currently official TypeScript SDK over stdio. LSP support is determined by user-configured language-server executables; current operations are definition, references, hover, and diagnostics.
-- **Backend chat/auth:** the intended backend is one company API with an OpenAI Chat Completions-compatible schema; requests use an app-issued access token in `Authorization: Bearer <access_token>`. Login/token acquisition and refresh come later. No static API key is part of the product contract. Current prototype uses `CHAT_ACCESS_TOKEN` with a placeholder default until auth is implemented. The user supplies the company URL when doing real end-to-end chat checks.
+- **Backend chat/auth:** the intended backend is one company API with an OpenAI Responses API-compatible schema; requests use an app-issued access token in `Authorization: Bearer <access_token>`. Login/token acquisition and refresh come later. No static API key is part of the product contract. Current prototype uses `CHAT_ACCESS_TOKEN` with a placeholder default until auth is implemented. The user supplies the company URL when doing real end-to-end chat checks.
 - **Database:** the user will provide the DB schema. Do not invent conversation/message persistence schema yet; preserve `ConversationStore` as the seam. Current harness conversation history is memory-only, and renderer sidebar session data is mock/local UI state rather than durable harness storage.
 - **Build/release:** packaging/build target and release design are for the user to decide. Updates will use a private update server for the internal app, not public GitHub Releases. Do not start a packaging/release implementation before the user chooses specifics.
 

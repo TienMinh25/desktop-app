@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process"
-import { StringDecoder } from "node:string_decoder"
 import { applyPatch as applyUnifiedPatch, parsePatch } from "diff"
 import { constants } from "node:fs"
+import type { Stats } from "node:fs"
 import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { rgPath } from "@vscode/ripgrep"
 import type { CommandResult, ExecutionEnvironment, FileListResult, ResolvedPath, TextFilePage, TextSearchResult, WorkspaceFile } from "./execution-environment"
 import { globToRegExp } from "./path-pattern"
+import { READ_LIMITS } from "./read-limits"
 
 const EXCLUDED_GLOBS = ["--glob", "!.git/**", "--glob", "!node_modules/**", "--glob", "!dist/**", "--glob", "!out/**"]
 
@@ -32,7 +33,6 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
     let ancestor = candidate
     while (true) {
       try {
-        const parentInfo = await lstat(ancestor)
         const actualParent = await realpath(ancestor)
         const target = resolve(actualParent, ...missing.reverse())
         return { path: target, insideWorkspace: isWithin(workspace, target) }
@@ -46,98 +46,116 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
   }
 
-  async readTextFile(path: string, maxBytes: number, expectedInsideWorkspace: boolean): Promise<string> {
+  async readFileBytes(path: string, maxBytes: number, expectedInsideWorkspace: boolean): Promise<Uint8Array> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Invalid file size limit")
     const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
     try {
       const fileInfo = await handle.stat()
-      if (!fileInfo.isFile()) throw new Error("Expected a regular text file")
+      if (!fileInfo.isFile()) throw new Error("Expected a regular file")
       if (fileInfo.size > maxBytes) throw new Error(`File exceeds the ${maxBytes}-byte limit`)
+      await this.verifyReadIdentity(path, fileInfo, expectedInsideWorkspace)
 
-      let canonicalPath: string
-      let canonicalWorkspace: string
-      let pathInfo
-      try {
-        canonicalPath = await realpath(path)
-        canonicalWorkspace = await realpath(this.workspacePath)
-        pathInfo = await stat(canonicalPath)
-      } catch {
-        throw new Error("Could not verify the current file path identity")
+      const chunks: Buffer[] = []
+      let totalBytes = 0
+      while (totalBytes <= maxBytes) {
+        const buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes + 1 - totalBytes))
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, totalBytes)
+        if (!bytesRead) break
+        chunks.push(buffer.subarray(0, bytesRead))
+        totalBytes += bytesRead
       }
-      if (fileInfo.dev !== pathInfo.dev || fileInfo.ino !== pathInfo.ino) {
-        throw new Error("File path identity changed before it could be read")
-      }
-      if (expectedInsideWorkspace && !isWithin(canonicalWorkspace, canonicalPath)) {
-        throw new Error("File path is no longer inside the workspace")
-      }
-
-      const buffer = Buffer.alloc(maxBytes + 1)
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-      if (bytesRead > maxBytes) throw new Error(`File exceeds the ${maxBytes}-byte limit`)
-      const text = buffer.subarray(0, bytesRead).toString("utf8")
-      if (text.includes("\0")) throw new Error("Binary files are not supported")
-      return text
+      if (totalBytes > maxBytes) throw new Error(`File exceeds the ${maxBytes}-byte limit`)
+      return Buffer.concat(chunks, totalBytes)
     } finally { await handle.close() }
   }
 
-  async readTextFilePage(path: string, expectedInsideWorkspace: boolean, offset: number, limit: number): Promise<TextFilePage> {
-    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 2_000) throw new Error("Invalid read page range")
-    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+  async readTextFile(path: string, maxBytes: number, expectedInsideWorkspace: boolean): Promise<string> {
+    const bytes = await this.readFileBytes(path, maxBytes, expectedInsideWorkspace)
+    const text = decodeUtf8(bytes)
+    if (text.includes("\0")) throw new Error("Binary files are not supported")
+    return text
+  }
+
+  async readTextFilePage(path: string, expectedInsideWorkspace: boolean, offset: number, limit: number, columnOffset = 0): Promise<TextFilePage> {
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > READ_LIMITS.pageLines || !Number.isInteger(columnOffset) || columnOffset < 0) {
+      throw new Error("Invalid read page range")
+    }
+    const bytes = await this.readFileBytes(path, READ_LIMITS.textFileBytes, expectedInsideWorkspace)
+    const text = decodeUtf8(bytes)
+    if (text.includes("\0")) throw new Error("Binary files are not supported")
+    const totalLines = countTextLines(text)
+    if (offset > totalLines) throw new Error("offset is past the end of the file")
+
+    let lineStart = 0
+    if (offset === totalLines) {
+      lineStart = text.length
+    } else {
+      for (let lineNumber = 0; lineNumber < offset; lineNumber += 1) {
+        const newline = text.indexOf("\n", lineStart)
+        if (newline < 0) throw new Error("offset is past the end of the file")
+        lineStart = newline + 1
+      }
+    }
+    const page: string[] = []
+    let pageBytes = 0
+    let lineIndex = offset
+    let column = columnOffset
+    let nextOffset: number | undefined
+    let nextColumnOffset: number | undefined
+
+    while (lineIndex < totalLines && page.length < limit) {
+      const newline = text.indexOf("\n", lineStart)
+      const rawLineEnd = newline < 0 ? text.length : newline
+      const lineEnd = rawLineEnd > lineStart && text.charCodeAt(rawLineEnd - 1) === 13 ? rawLineEnd - 1 : rawLineEnd
+      const lineLength = lineEnd - lineStart
+      if (column > lineLength || splitsSurrogatePair(text, lineStart, column, lineEnd)) {
+        throw new Error("columnOffset is past the end of the selected line or splits a Unicode character")
+      }
+      const available = READ_LIMITS.pageBytes - pageBytes - (page.length ? 1 : 0)
+      if (available <= 0) {
+        nextOffset = lineIndex
+        nextColumnOffset = column
+        break
+      }
+
+      const chunkEnd = takeUtf8StringEnd(text, lineStart + column, lineEnd, available)
+      const chunk = text.slice(lineStart + column, chunkEnd)
+      page.push(chunk)
+      pageBytes += Buffer.byteLength(chunk, "utf8") + (page.length > 1 ? 1 : 0)
+
+      if (chunkEnd < lineEnd) {
+        nextOffset = lineIndex
+        nextColumnOffset = chunkEnd - lineStart
+        break
+      }
+      lineIndex += 1
+      lineStart = newline < 0 ? text.length : newline + 1
+      column = 0
+    }
+
+    if (nextOffset === undefined && lineIndex < totalLines) {
+      nextOffset = lineIndex
+      nextColumnOffset = 0
+    }
+    return {
+      content: page.join("\n"),
+      startLine: page.length ? offset + 1 : 0,
+      endLine: page.length ? offset + page.length : offset,
+      ...(nextOffset === undefined ? { totalLines } : { nextOffset, ...(nextColumnOffset ? { nextColumnOffset } : {}) }),
+    }
+  }
+
+  private async verifyReadIdentity(path: string, fileInfo: Stats, expectedInsideWorkspace: boolean) {
+    let canonicalPath: string, canonicalWorkspace: string, pathInfo
     try {
-      const fileInfo = await handle.stat()
-      if (!fileInfo.isFile()) throw new Error("Expected a regular text file")
-      if (fileInfo.size > 20_000_000) throw new Error("File exceeds the 20000000-byte limit")
-      let canonicalPath: string, canonicalWorkspace: string, pathInfo
-      try {
-        canonicalPath = await realpath(path)
-        canonicalWorkspace = await realpath(this.workspacePath)
-        pathInfo = await stat(canonicalPath)
-      } catch { throw new Error("Could not verify the current file path identity") }
-      if (fileInfo.dev !== pathInfo.dev || fileInfo.ino !== pathInfo.ino) throw new Error("File path identity changed before it could be read")
-      if (expectedInsideWorkspace && !isWithin(canonicalWorkspace, canonicalPath)) throw new Error("File path is no longer inside the workspace")
-
-      const decoder = new StringDecoder("utf8"), page: string[] = []
-      let pending = "", lineIndex = 0, bytes = 0, position = 0, more = false, ended = false
-      const consumeLine = (rawLine: string) => {
-        const lineNumber = lineIndex++
-        if (lineNumber < offset) return
-        if (page.length >= limit) { more = true; return }
-        const original = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine
-        const characters = Array.from(original)
-        let line = characters.slice(0, 2_000).join("")
-        if (characters.length > 2_000) line += " … [line truncated at 2,000 characters]"
-        const available = 50_000 - bytes - (page.length ? 1 : 0)
-        if (Buffer.byteLength(line, "utf8") > available) {
-          if (page.length) { more = true; return }
-          line = truncateUtf8(line, Math.max(0, available - 30)) + " … [page byte limit]"
-        }
-        page.push(line)
-        bytes += Buffer.byteLength(line, "utf8") + (page.length > 1 ? 1 : 0)
-      }
-
-      while (!more) {
-        const buffer = Buffer.alloc(8_192)
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
-        if (!bytesRead) { ended = true; pending += decoder.end(); break }
-        position += bytesRead
-        if (position > 20_000_000) throw new Error("File exceeds the 20000000-byte limit")
-        const chunk = buffer.subarray(0, bytesRead)
-        if (chunk.includes(0)) throw new Error("Binary files are not supported")
-        pending += decoder.write(chunk)
-        const parts = pending.split("\n")
-        pending = parts.pop() ?? ""
-        for (const line of parts) {
-          consumeLine(line)
-          if (more) break
-        }
-      }
-
-      if (ended && !more && pending.length) consumeLine(pending)
-      const endLine = offset + page.length
-      return {
-        content: page.join("\n"), startLine: page.length ? offset + 1 : 0, endLine,
-        ...(more ? { nextOffset: endLine } : { totalLines: lineIndex }),
-      }
-    } finally { await handle.close() }
+      canonicalPath = await realpath(path)
+      canonicalWorkspace = await realpath(this.workspacePath)
+      pathInfo = await stat(canonicalPath)
+    } catch {
+      throw new Error("Could not verify the current file path identity")
+    }
+    if (fileInfo.dev !== pathInfo.dev || fileInfo.ino !== pathInfo.ino) throw new Error("File path identity changed before it could be read")
+    if (expectedInsideWorkspace && !isWithin(canonicalWorkspace, canonicalPath)) throw new Error("File path is no longer inside the workspace")
   }
 
   async writeTextFile(path: string, content: string): Promise<void> {
@@ -302,15 +320,40 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
   close() { /* No persistent host resources in this adapter yet. */ }
 }
 
-function truncateUtf8(value: string, maxBytes: number) {
-  let output = "", bytes = 0
-  for (const character of value) {
-    const size = Buffer.byteLength(character, "utf8")
-    if (bytes + size > maxBytes) break
-    output += character
-    bytes += size
+function decodeUtf8(bytes: Uint8Array): string {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes) }
+  catch { throw new Error("File is not valid UTF-8 text") }
+}
+
+function countTextLines(text: string): number {
+  if (text.length === 0) return 0
+  let count = text.endsWith("\n") ? 0 : 1
+  let position = -1
+  while ((position = text.indexOf("\n", position + 1)) >= 0) count += 1
+  return count
+}
+
+function takeUtf8StringEnd(text: string, start: number, end: number, maxBytes: number): number {
+  let position = start
+  let byteLength = 0
+  while (position < end) {
+    const codePoint = text.codePointAt(position)
+    if (codePoint === undefined) break
+    const width = codePoint > 0xffff ? 2 : 1
+    const characterBytes = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : width === 2 ? 4 : 3
+    if (byteLength + characterBytes > maxBytes) break
+    byteLength += characterBytes
+    position += width
   }
-  return output
+  return position
+}
+
+function splitsSurrogatePair(text: string, lineStart: number, column: number, lineEnd: number): boolean {
+  const position = lineStart + column
+  if (position <= lineStart || position >= lineEnd) return false
+  const previous = text.charCodeAt(position - 1)
+  const current = text.charCodeAt(position)
+  return previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff
 }
 
 function isWithin(root: string, target: string) {

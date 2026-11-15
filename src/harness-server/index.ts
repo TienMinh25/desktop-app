@@ -44,10 +44,10 @@ const runtime = new HarnessRuntime({
   tools,
   permissions,
   askUser(question) { return questions.ask(question) },
-  // Creates the ChatModel adapter for the selected model using the configured company endpoint.
+  // Creates the Responses API adapter for the selected model using the configured company endpoint.
   createChatModel(modelName) {
-    const endpoint = API_CONFIG.CHAT_COMPLETIONS_URL
-    if (!endpoint) throw new Error("CHAT_COMPLETIONS_URL is not configured")
+    const endpoint = API_CONFIG.RESPONSES_API_URL
+    if (!endpoint) throw new Error("RESPONSES_API_URL is not configured")
     return new ChatClient({ endpoint, model: modelName, accessToken: API_CONFIG.CHAT_ACCESS_TOKEN })
   },
   createExecutionEnvironment(workspacePath) { return new LocalExecutionEnvironment(workspacePath) },
