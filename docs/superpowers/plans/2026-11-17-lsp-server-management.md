@@ -97,3 +97,25 @@
 - [x] Document app-managed LSP setup, supported catalog, runtime availability, and existing four operations; remove end-user `LSP_SERVERS` setup instructions.
 - [x] Record this feature as the follow-up that supersedes the prior UI non-goal.
 - [x] Run source-only TypeScript checking, production build, and `git diff --check`; inspect changed files and diff for IPC/schema consistency. Automated tests are outside this task's requested verification scope. (`npm run typecheck` also checks repository tests and currently reports stale test typings.)
+
+### Task 5: Expand the built-in language-server catalog
+
+**Files:**
+- Modify: `src/domain/lsp/lsp-registry.ts`
+- Modify: `src/desktop/main/lsp-settings-store.ts`
+- Modify: `src/harness/lsp/lsp-manager.ts`
+- Modify: `docs/tools.md`
+- Modify: `docs/superpowers/specs/2026-11-17-lsp-server-management.md`
+
+**Interfaces:**
+- Reuse the existing static `LspServerProfile` catalog, detection flow, executable override, and official setup guide UI.
+- Keep the TypeScript Language Server profile for both TypeScript and JavaScript.
+- Use `jdtls` for Java, `csharp-ls` for C#, `clangd` for C/C++, and `intelephense --stdio` for PHP.
+
+- [x] Add profiles for Java, C#, C/C++, and PHP with extensions, language IDs where needed, install hints, and official guides.
+- [x] Search common .NET global-tool and Homebrew LLVM binary directories during detection.
+- [x] Map the added file extensions to correct LSP language IDs when the profile does not specify one.
+- [x] Update supported-language documentation and note that TypeScript Language Server also covers JavaScript.
+- [x] Run source-only TypeScript checking, production build, and `git diff --check`.
+
+Final review: fresh reviewer found no Critical/Important issues. Minor deferred: uppercase `.C` source files receive language ID `c`; clangd still identifies the file by path, but this extension is not handled specially by the LSP language-ID fallback.

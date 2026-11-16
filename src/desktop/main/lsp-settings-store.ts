@@ -192,6 +192,7 @@ function standardBinaryDirectories(home: string, env: NodeJS.ProcessEnv, platfor
       join(env.CARGO_HOME ?? join(home, ".cargo"), "bin"),
       join(env.APPDATA ?? join(home, "AppData", "Roaming"), "npm"),
       join(env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "Programs"),
+      join(home, ".dotnet", "tools"),
     ]
   }
   return [
@@ -199,10 +200,13 @@ function standardBinaryDirectories(home: string, env: NodeJS.ProcessEnv, platfor
     join(home, "go", "bin"),
     join(env.CARGO_HOME ?? join(home, ".cargo"), "bin"),
     join(home, ".local", "bin"),
+    join(home, ".dotnet", "tools"),
     join(home, ".npm-global", "bin"),
     join(home, ".volta", "bin"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
+    "/opt/homebrew/opt/llvm/bin",
+    "/usr/local/opt/llvm/bin",
   ]
 }
 

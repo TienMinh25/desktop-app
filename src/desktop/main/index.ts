@@ -75,16 +75,46 @@ function setupAutoUpdater() {
     })
 }
 
-function startHarnessProcess() {
+function startHarnessProcess(): UtilityProcess {
     const entryPath = fileURLToPath(new URL("./harness-server.js", import.meta.url))
-    harnessProcess = utilityProcess.fork(entryPath, [], {
+    const process = utilityProcess.fork(entryPath, [], {
         serviceName: "Ccodex Harness",
     })
-    harnessProcess.on("message", (event: HarnessEvent) => {
+    harnessProcess = process
+    process.on("message", (event: HarnessEvent) => {
         for (const window of BrowserWindow.getAllWindows()) {
             window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event)
         }
     })
+    process.on("exit", () => {
+        if (harnessProcess === process) harnessProcess = null
+    })
+    return process
+}
+
+function stopHarnessProcess() {
+    const process = harnessProcess
+    harnessProcess = null
+    process?.kill()
+}
+
+function isCurrentHarnessProcess(candidate: UtilityProcess) {
+    return harnessProcess === candidate
+}
+
+async function ensureHarnessProcess() {
+    if (harnessProcess) return
+    const process = startHarnessProcess()
+
+    let initialLspServers: LspServerConfig[] = []
+    try {
+        initialLspServers = await getLspSettingsStore().harnessConfigs()
+    } catch (error) {
+        console.error("Could not load saved LSP settings; starting without language servers.", error)
+    }
+    if (isCurrentHarnessProcess(process)) {
+        process.postMessage({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers: initialLspServers })
+    }
 }
 
 function forwardHarnessCommand(command: unknown) {
@@ -234,25 +264,18 @@ app.whenReady().then(async () => {
     await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
     lspSettingsStore = new LspSettingsStore(app.getPath("userData"))
     setupAutoUpdater()
-    startHarnessProcess()
-    let initialLspServers: LspServerConfig[] = []
-    try {
-        initialLspServers = await getLspSettingsStore().harnessConfigs()
-    } catch (error) {
-        console.error("Could not load saved LSP settings; starting without language servers.", error)
-    }
-    forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers: initialLspServers })
+    await ensureHarnessProcess()
     createWindow()
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow()
+            void ensureHarnessProcess().then(createWindow)
         }
     })
 })
 app.on("window-all-closed", () => {
-    harnessProcess?.kill()
-    harnessProcess = null
     if (process.platform !== "darwin") {
+        stopHarnessProcess()
         app.quit()
     }
 })
+app.on("before-quit", stopHarnessProcess)

@@ -43,8 +43,14 @@ Let users enable local language servers without editing `LSP_SERVERS`. The app s
 - TypeScript/JavaScript (`typescript-language-server --stdio`): `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`; guide `https://github.com/typescript-language-server/typescript-language-server`.
 - Python (`pyright-langserver --stdio`): `.py`, `.pyi`; guide `https://github.com/microsoft/pyright/blob/main/docs/installation.md`.
 - Rust (`rust-analyzer`): `.rs`; guide `https://rust-analyzer.github.io/book/installation.html`.
+- Java (Eclipse JDT LS, `jdtls`): `.java`; on macOS suggest `brew install jdtls`; requires a supported Java runtime; guide `https://github.com/eclipse-jdtls/eclipse.jdt.ls`.
+- C# (`csharp-ls`): `.cs`; `dotnet tool install --global csharp-ls`; requires the .NET SDK; guide `https://github.com/razzmatazz/csharp-language-server`.
+- C/C++ (`clangd`): `.c`, `.h`, `.cc`, `.hh`, `.cpp`, `.hpp`, `.cxx`, `.hxx`; on macOS suggest `brew install llvm`; guide `https://clangd.llvm.org/installation.html`. Project results improve when `compile_commands.json` is available.
+- PHP (Intelephense, `intelephense --stdio`): `.php`, `.phtml`; `npm install --global intelephense`; guide `https://www.intelephense.com/docs`.
 
-Install instructions are informational and are maintained in the shipped catalog. They must not imply that the app installed the server.
+TypeScript Language Server already supports both TypeScript and JavaScript extensions: `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, and `.cjs`.
+
+Install instructions are informational and are maintained in the shipped catalog. They must not imply that the app installed the server. Homebrew commands are macOS-specific; the official guides cover other operating systems.
 
 ## Important states
 
@@ -68,3 +74,7 @@ Install instructions are informational and are maintained in the shipped catalog
 - TypeScript Language Server project: `https://github.com/typescript-language-server/typescript-language-server`
 - Pyright install guide: `https://github.com/microsoft/pyright/blob/main/docs/installation.md`
 - rust-analyzer install guide: `https://rust-analyzer.github.io/book/installation.html`
+- Eclipse JDT LS setup: `https://github.com/eclipse-jdtls/eclipse.jdt.ls`
+- csharp-ls setup: `https://github.com/razzmatazz/csharp-language-server`
+- clangd setup: `https://clangd.llvm.org/installation.html`
+- Intelephense setup: `https://www.intelephense.com/docs`

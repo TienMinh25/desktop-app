@@ -8,7 +8,6 @@ const MAX_RESULT_BYTES = 30_000
 export class LspManager {
   private readonly clients = new Map<string, LspClient>()
   private configuredServers?: ServerConfig[]
-  constructor(private readonly serializedConfig?: string) {}
 
   setConfiguration(servers: LspServerConfig[]) {
     this.close()
@@ -56,13 +55,7 @@ export class LspManager {
   close() { for (const client of this.clients.values()) client.close(); this.clients.clear() }
 
   private configs(): ServerConfig[] {
-    if (this.configuredServers) return this.configuredServers
-    if (!this.serializedConfig) return []
-    let parsed: unknown
-    try { parsed = JSON.parse(this.serializedConfig) as unknown }
-    catch (error) { throw new Error(`LSP_SERVERS must be valid JSON: ${error instanceof Error ? error.message : String(error)}`) }
-    if (!Array.isArray(parsed)) throw new Error("LSP_SERVERS must be a JSON array")
-    return parsed.map(parseServerConfig)
+    return this.configuredServers ?? []
   }
 }
 
@@ -119,6 +112,12 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 }
 
 function languageFromExtension(extension: string) {
-  const map: Record<string, string> = { ".ts": "typescript", ".tsx": "typescriptreact", ".mts": "typescript", ".cts": "typescript", ".js": "javascript", ".jsx": "javascriptreact", ".mjs": "javascript", ".cjs": "javascript", ".py": "python", ".pyi": "python", ".rs": "rust", ".go": "go" }
+  const map: Record<string, string> = {
+    ".ts": "typescript", ".tsx": "typescriptreact", ".mts": "typescript", ".cts": "typescript",
+    ".js": "javascript", ".jsx": "javascriptreact", ".mjs": "javascript", ".cjs": "javascript",
+    ".py": "python", ".pyi": "python", ".rs": "rust", ".go": "go",
+    ".c": "c", ".h": "cpp", ".cc": "cpp", ".hh": "cpp", ".cpp": "cpp", ".hpp": "cpp", ".cxx": "cpp", ".hxx": "cpp",
+    ".java": "java", ".cs": "csharp", ".php": "php", ".phtml": "php",
+  }
   return map[extension.toLowerCase()] ?? "plaintext"
 }
