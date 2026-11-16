@@ -71,21 +71,22 @@ export class LspSettingsStore {
     for (const profile of LSP_SERVER_CATALOG) {
       const preference = settings.profiles[profile.id]
       if (!preference?.enabled) continue
-      const command = await this.resolveExecutable(profile.command, preference.commandOverride)
-      if (!command) continue
-      result.push({ extensions: profile.extensions, command, args: profile.args, languageId: profile.languageId, env: { PATH: executionPath } })
+      const launch = await this.resolveLaunch(profile.command, preference.commandOverride)
+      if (!launch) continue
+      result.push({ extensions: profile.extensions, command: launch.command, args: [...launch.args, ...profile.args], languageId: profile.languageId, env: { PATH: executionPath } })
     }
     for (const profile of settings.customServers) {
-      const command = await this.resolveExecutable(profile.command)
-      if (!command) continue
-      result.push({ extensions: profile.extensions, command, args: profile.args, languageId: profile.languageId, env: { PATH: executionPath } })
+      const launch = await this.resolveLaunch(profile.command)
+      if (!launch) continue
+      result.push({ extensions: profile.extensions, command: launch.command, args: [...launch.args, ...profile.args], languageId: profile.languageId, env: { PATH: executionPath } })
     }
     return result.map((config) => LspServerConfigSchema.parse(config))
   }
 
   private async profileStatus(profile: LspServerProfile, enabled: boolean, commandOverride?: string): Promise<LspServerStatus> {
     try {
-      const executablePath = await this.resolveExecutable(profile.command, commandOverride)
+      const launch = await this.resolveLaunch(profile.command, commandOverride)
+      const executablePath = launch?.executablePath ?? null
       return {
         ...profile,
         enabled: enabled && executablePath !== null,
@@ -139,6 +140,23 @@ export class LspSettingsStore {
       }
     }
     return null
+  }
+
+  private async resolveLaunch(command: string, override?: string): Promise<{ executablePath: string; command: string; args: string[] } | null> {
+    const executablePath = await this.resolveExecutable(command, override)
+    if (!executablePath) return null
+    if (this.platform !== "win32" || !/\.(cmd|bat)$/i.test(executablePath)) {
+      return { executablePath, command: executablePath, args: [] }
+    }
+
+    const powershell = join(this.environment.SystemRoot ?? this.environment.WINDIR ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    const powershellShim = executablePath.replace(/\.(cmd|bat)$/i, ".ps1")
+    if (!(await isExecutable(powershell, this.platform)) || !(await isExecutable(powershellShim, this.platform))) return null
+    return {
+      executablePath,
+      command: powershell,
+      args: ["-NoProfile", "-NonInteractive", "-File", powershellShim],
+    }
   }
 
   private async executionPath(): Promise<string> {

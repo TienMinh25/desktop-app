@@ -89,6 +89,12 @@ export function LanguageServersTabView({ onShowToast }: LanguageServersTabViewPr
     try { await saveSettings({ ...settings, profiles }, `Saved executable path for ${server.language}`) } catch { /* Error is shown in the page. */ }
   }
 
+  async function clearCommandOverride(server: LspServerStatus) {
+    const current = settings.profiles[server.id] ?? { enabled: server.requestedEnabled }
+    const profiles = { ...settings.profiles, [server.id]: { ...current, commandOverride: undefined } }
+    try { await saveSettings({ ...settings, profiles }, `Using detected executable for ${server.language}`) } catch { /* Error is shown in the page. */ }
+  }
+
   async function saveCustomServer(server: LspCustomServer) {
     const customServers = [...settings.customServers.filter((item) => item.id !== server.id), server]
     await saveSettings({ ...settings, customServers }, `${server.language} server saved`)
@@ -134,6 +140,7 @@ export function LanguageServersTabView({ onShowToast }: LanguageServersTabViewPr
               <ServerRow key={server.id} server={server} command={commandInputs[server.id] ?? server.command} isSaving={isSaving}
                 onCommandChange={(command) => setCommandInputs((current) => ({ ...current, [server.id]: command }))}
                 onSaveCommand={() => void saveCommand(server)}
+                onClearCommand={() => void clearCommandOverride(server)}
                 onOpenGuide={() => void openGuide(server.id)}
                 onToggle={(enabled) => void toggleServer(server, enabled)} />
             ))}
@@ -162,13 +169,14 @@ interface ServerRowProps {
   custom?: boolean
   onCommandChange?: (command: string) => void
   onSaveCommand?: () => void
+  onClearCommand?: () => void
   onToggle?: (enabled: boolean) => void
   onEdit?: () => void
   onRemove?: () => void
   onOpenGuide?: () => void
 }
 
-function ServerRow({ server, command, isSaving, custom = false, onCommandChange, onSaveCommand, onToggle, onEdit, onRemove, onOpenGuide }: ServerRowProps) {
+function ServerRow({ server, command, isSaving, custom = false, onCommandChange, onSaveCommand, onClearCommand, onToggle, onEdit, onRemove, onOpenGuide }: ServerRowProps) {
   const [showSetup, setShowSetup] = useState(false)
   const statusLabel = server.detectionError ? "Needs attention" : server.enabled ? "Enabled" : server.installed ? "Installed" : "Not installed"
 
@@ -205,9 +213,20 @@ function ServerRow({ server, command, isSaving, custom = false, onCommandChange,
         {showSetup && <div className={styles.pathEditor}>
           <input value={command} onChange={(event) => onCommandChange?.(event.target.value)} aria-label={`${server.language} executable path`} placeholder={server.command} />
           <button className={styles.secondaryButton} type="button" onClick={onSaveCommand} disabled={isSaving || !command.trim()}>Save path</button>
+          {server.commandOverride && !server.installed && <button className={styles.textButton} type="button" onClick={onClearCommand} disabled={isSaving}>Use automatic detection</button>}
         </div>}
       </div>}
-      {server.installed && !custom && <p className={styles.serverFootnote}>Used automatically in workspaces containing {server.extensions.join(", ")} files.</p>}
+      {server.installed && !custom && <>
+        <p className={styles.serverFootnote}>Used automatically in workspaces containing {server.extensions.join(", ")} files.</p>
+        <div className={styles.setupActions}>
+          <button className={styles.textButton} type="button" onClick={() => setShowSetup((value) => !value)}>{showSetup ? "Hide executable path" : "Change executable path"}</button>
+          {server.commandOverride && <button className={styles.textButton} type="button" onClick={onClearCommand} disabled={isSaving}>Use automatic detection</button>}
+        </div>
+        {showSetup && <div className={styles.pathEditor}>
+          <input value={command} onChange={(event) => onCommandChange?.(event.target.value)} aria-label={`${server.language} executable path`} placeholder={server.command} />
+          <button className={styles.secondaryButton} type="button" onClick={onSaveCommand} disabled={isSaving || !command.trim()}>Save path</button>
+        </div>}
+      </>}
     </article>
   )
 }
