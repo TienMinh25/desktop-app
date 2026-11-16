@@ -262,7 +262,7 @@ ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
 
 app.whenReady().then(async () => {
     await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
-    lspSettingsStore = new LspSettingsStore(app.getPath("userData"))
+    lspSettingsStore = new LspSettingsStore(join(app.getPath("home"), ".ccodex"))
     setupAutoUpdater()
     await ensureHarnessProcess()
     createWindow()

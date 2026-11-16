@@ -237,123 +237,131 @@ export function CustomizePanel({ onShowToast, initialTab = "connectors" }: Custo
           <h1 className={styles.pageTitle}>Customize</h1>
 
           <div className={styles.toolbar}>
-            <div className={styles.tabsGroup}>
-              <button
-                type="button"
-                className={`${styles.tabButton} ${mainTab === "skills" ? styles.activeTab : ""}`}
-                onClick={() => setMainTab("skills")}
-              >
-                Skills
-              </button>
-              <button
-                type="button"
-                className={`${styles.tabButton} ${
-                  mainTab === "connectors" ? styles.activeTab : ""
-                }`}
-                onClick={() => setMainTab("connectors")}
-              >
-                Connectors
-              </button>
-
-              <button
-                type="button"
-                className={`${styles.tabButton} ${mainTab === "lsp" ? styles.activeTab : ""}`}
-                onClick={() => {
-                  setSelectedConnector(null)
-                  setMainTab("lsp")
-                }}
-              >
-                Language Servers
-              </button>
-
-              {mainTab === "connectors" && <>
-                <span className={styles.tabDivider} />
+            <div
+              className={styles.mainTabsViewport}
+              role="group"
+              aria-label="Customize sections"
+            >
+              <div className={styles.tabsGroup}>
                 <button
                   type="button"
-                  className={`${styles.tabButton} ${subTab === "yours" ? styles.activeTab : ""}`}
-                  onClick={() => setSubTab("yours")}
+                  className={`${styles.tabButton} ${mainTab === "skills" ? styles.activeTab : ""}`}
+                  onClick={() => setMainTab("skills")}
                 >
-                  Yours
+                  Skills
                 </button>
                 <button
                   type="button"
-                  className={`${styles.tabButton} ${subTab === "discover" ? styles.activeTab : ""}`}
-                  onClick={() => setSubTab("discover")}
+                  className={`${styles.tabButton} ${
+                    mainTab === "connectors" ? styles.activeTab : ""
+                  }`}
+                  onClick={() => setMainTab("connectors")}
                 >
-                  Discover
+                  Connectors
                 </button>
-              </>}
+                <button
+                  type="button"
+                  className={`${styles.tabButton} ${mainTab === "lsp" ? styles.activeTab : ""}`}
+                  onClick={() => {
+                    setSelectedConnector(null)
+                    setMainTab("lsp")
+                  }}
+                >
+                  Language Servers
+                </button>
+              </div>
             </div>
 
-            {mainTab === "connectors" && <div className={styles.toolbarActions}>
-              <div className={styles.searchWrapper}>
-                <svg className={styles.searchIcon} viewBox="0 0 16 16" fill="none">
-                  <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" />
-                  <path
-                    d="M10.5 10.5L14 14"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <input
-                  className={styles.searchInput}
-                  placeholder="Search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
+            {mainTab === "connectors" && (
+              <div className={styles.connectorToolbar}>
+                <div className={styles.tabsGroup} role="group" aria-label="Connector views">
+                  <button
+                    type="button"
+                    className={`${styles.tabButton} ${subTab === "yours" ? styles.activeTab : ""}`}
+                    onClick={() => setSubTab("yours")}
+                  >
+                    Yours
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.tabButton} ${subTab === "discover" ? styles.activeTab : ""}`}
+                    onClick={() => setSubTab("discover")}
+                  >
+                    Discover
+                  </button>
+                </div>
 
-              <div ref={addMenuRef} className={styles.addDropdownWrap}>
-                <button
-                  type="button"
-                  className={styles.addButton}
-                  onClick={() => setIsAddMenuOpen((prev) => !prev)}
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M8 2.5v11M2.5 8h11"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
+                <div className={styles.toolbarActions}>
+                  <div className={styles.searchWrapper}>
+                    <svg className={styles.searchIcon} viewBox="0 0 16 16" fill="none">
+                      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" />
+                      <path
+                        d="M10.5 10.5L14 14"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <input
+                      className={styles.searchInput}
+                      placeholder="Search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                  </svg>
-                  <span>Add</span>
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M4 6.5l4 4 4-4"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
+                  </div>
 
-                {isAddMenuOpen && (
-                  <div className={styles.addDropdownMenu}>
+                  <div ref={addMenuRef} className={styles.addDropdownWrap}>
                     <button
                       type="button"
-                      className={styles.addDropdownItem}
-                      onClick={() => {
-                        setIsAddMenuOpen(false)
-                        setIsCustomModalOpen(true)
-                      }}
+                      className={styles.addButton}
+                      onClick={() => setIsAddMenuOpen((prev) => !prev)}
                     >
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                         <path
-                          d="M8 3v10M3 8h10"
+                          d="M8 2.5v11M2.5 8h11"
                           stroke="currentColor"
-                          strokeWidth="1.5"
+                          strokeWidth="1.8"
                           strokeLinecap="round"
                         />
                       </svg>
-                      <span>Add custom connector</span>
+                      <span>Add</span>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                        <path
+                          d="M4 6.5l4 4 4-4"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
                     </button>
+
+                    {isAddMenuOpen && (
+                      <div className={styles.addDropdownMenu}>
+                        <button
+                          type="button"
+                          className={styles.addDropdownItem}
+                          onClick={() => {
+                            setIsAddMenuOpen(false)
+                            setIsCustomModalOpen(true)
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <path
+                              d="M8 3v10M3 8h10"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          <span>Add custom connector</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>}
+            )}
           </div>
 
           {mainTab === "skills" ? (

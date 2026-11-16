@@ -18,12 +18,12 @@ export class LspSettingsStore {
   private readonly settingsPath: string
 
   constructor(
-    userDataPath: string,
+    ccodexDirectory: string,
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly homeDirectory = process.env.HOME ?? process.env.USERPROFILE ?? "",
   ) {
-    this.settingsPath = join(userDataPath, "lsp-settings.json")
+    this.settingsPath = join(ccodexDirectory, "settings.json")
   }
 
   async list(): Promise<LspServerStatus[]> {
@@ -57,10 +57,8 @@ export class LspSettingsStore {
       if (customIds.has(profile.id)) throw new Error(`Duplicate custom LSP server: ${profile.id}`)
       customIds.add(profile.id)
     }
-    await mkdir(dirname(this.settingsPath), { recursive: true })
-    const temporaryPath = `${this.settingsPath}.tmp`
-    await writeFile(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 })
-    await rename(temporaryPath, this.settingsPath)
+    const appSettings = await this.readSettingsFile()
+    await this.writeSettingsFile({ ...appSettings, lsp: settings })
     return this.list()
   }
 
@@ -110,15 +108,34 @@ export class LspSettingsStore {
   }
 
   private async readSettings(): Promise<LspSettings> {
+    const appSettings = await this.readSettingsFile()
+    if (appSettings.lsp === undefined) return DEFAULT_SETTINGS
+    const parsed = LspSettingsSchema.safeParse(appSettings.lsp)
+    if (!parsed.success) throw new Error(`Saved LSP settings are invalid: ${parsed.error.issues[0]?.message ?? "validation failed"}`)
+    return parsed.data
+  }
+
+  private async readSettingsFile(): Promise<Record<string, unknown>> {
     try {
       const content = await readFile(this.settingsPath, "utf8")
-      const parsed = LspSettingsSchema.safeParse(JSON.parse(content) as unknown)
-      if (!parsed.success) throw new Error(`Saved LSP settings are invalid: ${parsed.error.issues[0]?.message ?? "validation failed"}`)
-      return parsed.data
+      const parsed: unknown = JSON.parse(content)
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Saved app settings must be a JSON object")
+      return parsed as Record<string, unknown>
     } catch (error) {
-      if (isMissingFile(error)) return DEFAULT_SETTINGS
+      if (isMissingFile(error)) {
+        const defaults = { lsp: DEFAULT_SETTINGS }
+        await this.writeSettingsFile(defaults)
+        return defaults
+      }
       throw error
     }
+  }
+
+  private async writeSettingsFile(settings: Record<string, unknown>): Promise<void> {
+    await mkdir(dirname(this.settingsPath), { recursive: true })
+    const temporaryPath = `${this.settingsPath}.tmp`
+    await writeFile(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 })
+    await rename(temporaryPath, this.settingsPath)
   }
 
   private async resolveExecutable(command: string, override?: string): Promise<string | null> {
