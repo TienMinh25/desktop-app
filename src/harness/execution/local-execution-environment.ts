@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { applyPatch as applyUnifiedPatch, parsePatch } from "diff"
 import { constants } from "node:fs"
 import type { Stats } from "node:fs"
@@ -6,13 +6,25 @@ import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { rgPath } from "@vscode/ripgrep"
 import type { CommandResult, ExecutionEnvironment, FileListResult, ResolvedPath, TextFilePage, TextSearchResult, WorkspaceFile } from "./execution-environment"
+import { resolveShellInvocation } from "./shell-selector"
 import { globToRegExp } from "./path-pattern"
 import { READ_LIMITS } from "./read-limits"
 
 const EXCLUDED_GLOBS = ["--glob", "!.git/**", "--glob", "!node_modules/**", "--glob", "!dist/**", "--glob", "!out/**"]
 
+interface ActiveShellProcess {
+  child: ChildProcess
+  os: string
+  timeoutTimer?: ReturnType<typeof setTimeout>
+  forceKillTimer?: ReturnType<typeof setTimeout>
+  terminating: boolean
+}
+
 /** Host-backed first adapter. It centralizes policy-sensitive OS calls behind ExecutionEnvironment. */
 export class LocalExecutionEnvironment implements ExecutionEnvironment {
+  private environmentClosed = false
+  private readonly activeProcesses = new Map<ChildProcess, ActiveShellProcess>()
+
   constructor(readonly workspacePath: string) {}
 
   async resolvePath(input: string, allowMissing = false): Promise<ResolvedPath> {
@@ -276,16 +288,23 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
   }
 
   async runCommand(command: string, requestedTimeout = 120_000): Promise<CommandResult> {
+    if (this.environmentClosed) throw new Error("Execution environment is closed")
     const timeoutMs = Math.min(Math.max(requestedTimeout, 1000), 120_000)
-    const shell = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "/bin/sh"
-    const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command]
+    const invocation = resolveShellInvocation(command, process.platform, process.env)
     const safeEnv: NodeJS.ProcessEnv = {}
     for (const key of ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TERM", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE", "APPDATA", "LOCALAPPDATA"]) {
       if (process.env[key] !== undefined) safeEnv[key] = process.env[key]
     }
     return new Promise((resolveResult, reject) => {
-      const child = spawn(shell, shellArgs, { cwd: this.workspacePath, env: safeEnv, windowsHide: true, detached: process.platform !== "win32" })
+      const child = spawn(invocation.executable, invocation.args, {
+        cwd: this.workspacePath,
+        env: safeEnv,
+        windowsHide: true,
+        detached: invocation.os !== "Windows",
+        ...(invocation.windowsVerbatimArguments === undefined ? {} : { windowsVerbatimArguments: invocation.windowsVerbatimArguments }),
+      })
       let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0), stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0), outputTruncated = false, timedOut = false
+      const active: ActiveShellProcess = { child, os: invocation.os, terminating: false }
       const append = (current: Buffer, chunk: Buffer) => {
         const remaining = 50_000 - stdout.length - stderr.length
         if (remaining <= 0) { outputTruncated = true; return current }
@@ -295,29 +314,61 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
       }
       child.stdout.on("data", (chunk: Buffer) => { stdout = append(stdout, chunk) })
       child.stderr.on("data", (chunk: Buffer) => { stderr = append(stderr, chunk) })
-      const timer = setTimeout(() => {
+      active.timeoutTimer = setTimeout(() => {
         timedOut = true
-        if (process.platform !== "win32" && child.pid) {
-          try { process.kill(-child.pid, "SIGTERM") } catch { child.kill("SIGTERM") }
-          const forceTimer = setTimeout(() => { try { process.kill(-child.pid!, "SIGKILL") } catch { /* process already exited */ } }, 1000)
-          forceTimer.unref()
-        } else {
-          if (process.platform === "win32" && child.pid) {
-            const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" })
-            killer.on("error", () => {})
-          }
-          child.kill()
-        }
+        this.terminateProcess(active)
       }, timeoutMs)
-      child.on("error", (error) => { clearTimeout(timer); reject(error) })
+      this.activeProcesses.set(child, active)
+      child.on("error", (error) => {
+        clearTimeout(active.timeoutTimer)
+        this.activeProcesses.delete(child)
+        reject(error)
+      })
       child.on("close", (exitCode, signal) => {
-        clearTimeout(timer)
+        clearTimeout(active.timeoutTimer)
+        this.activeProcesses.delete(child)
         resolveResult({ exitCode, signal, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8"), timedOut, outputTruncated })
       })
     })
   }
 
-  close() { /* No persistent host resources in this adapter yet. */ }
+  private terminateProcess(active: ActiveShellProcess): void {
+    if (active.terminating) return
+    active.terminating = true
+    const { child, os } = active
+    if (os !== "Windows" && child.pid) {
+      try { process.kill(-child.pid, "SIGTERM") }
+      catch { try { child.kill("SIGTERM") } catch { /* process already exited */ } }
+      active.forceKillTimer = setTimeout(() => {
+        try { process.kill(-child.pid!, "SIGKILL") } catch { /* process group already exited */ }
+      }, 1000)
+      return
+    }
+    if (os === "Windows" && child.pid) {
+      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" })
+      let fallbackSent = false
+      const fallback = () => {
+        if (fallbackSent) return
+        fallbackSent = true
+        try { child.kill() } catch { /* process already exited */ }
+      }
+      killer.once("error", fallback)
+      killer.once("close", (exitCode) => {
+        if (exitCode !== 0) fallback()
+      })
+      return
+    }
+    try { child.kill() } catch { /* process already exited */ }
+  }
+
+  close(): void {
+    if (this.environmentClosed) return
+    this.environmentClosed = true
+    for (const active of this.activeProcesses.values()) {
+      clearTimeout(active.timeoutTimer)
+      this.terminateProcess(active)
+    }
+  }
 }
 
 function decodeUtf8(bytes: Uint8Array): string {
