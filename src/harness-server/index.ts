@@ -14,7 +14,7 @@ import { LocalExecutionEnvironment } from "../harness/execution/local-execution-
 import { LspManager } from "../harness/lsp/lsp-manager"
 import { McpToolHost } from "../harness/mcp/mcp-tool-host"
 import { applyPatchTool } from "../harness/tools/apply-patch-tool"
-import { bashTool } from "../harness/tools/bash-tool"
+import { shellTool } from "../harness/tools/shell-tool"
 import { editTool } from "../harness/tools/edit-tool"
 import { globTool } from "../harness/tools/glob-tool"
 import { grepTool } from "../harness/tools/grep-tool"
@@ -33,7 +33,7 @@ const permissionConfig = parsePermissionRules(process.env.HARNESS_PERMISSION_RUL
 
 const tools = new ToolRegistry()
 const lspManager = new LspManager(process.env.LSP_SERVERS)
-for (const tool of [readTool, writeTool, editTool, globTool, grepTool, bashTool, applyPatchTool, createLspTool(lspManager), webfetchTool, todoWriteTool, skillTool, questionTool]) tools.register(tool)
+for (const tool of [readTool, writeTool, editTool, globTool, grepTool, shellTool, applyPatchTool, createLspTool(lspManager), webfetchTool, todoWriteTool, skillTool, questionTool]) tools.register(tool)
 const permissions = new PermissionManager((event) => parentPort.postMessage(event), permissionConfig.rules)
 const questions = new QuestionManager((event) => parentPort.postMessage(event))
 const mcpHost = new McpToolHost(process.env.MCP_SERVERS)

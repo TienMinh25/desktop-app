@@ -91,4 +91,17 @@ describe("PermissionManager approval modes", () => {
     await expect(manager.request(request, "auto-safe")).resolves.toBeUndefined()
     expect(events).toHaveLength(0)
   })
+
+  it("uses the shell permission default and does not apply legacy bash rules", async () => {
+    const events: HarnessEvent[] = []
+    const manager = new PermissionManager((event) => events.push(event), [
+      { tool: "bash", pattern: "*", decision: "allow" },
+    ])
+    const result = manager.request({ ...request, tool: "shell", action: "run a shell command" }, "auto-safe")
+    const permissionEvent = events.find((event) => event.type === "permission.required")
+    expect(permissionEvent?.type).toBe("permission.required")
+    if (permissionEvent?.type !== "permission.required") throw new Error("Expected shell permission approval")
+    manager.respond(permissionEvent.permissionRequestId, "allow")
+    await expect(result).resolves.toBeUndefined()
+  })
 })

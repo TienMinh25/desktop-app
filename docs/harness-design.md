@@ -88,7 +88,7 @@ Quyết định cho phép của người dùng chỉ áp dụng một lần và 
 |---|---|---|
 | `read` | Policy cho phép đọc trong workspace hiệu lực; hỏi nếu ở ngoài workspace hoặc thuộc đường dẫn/tệp chứa thông tin xác thực phổ biến như `.env`, `.ssh`, `.aws`, `.kube`, `.docker` và thư mục thông tin xác thực cloud | Chế độ duyệt của người dùng được áp dụng sau policy này. Có thể dùng đường dẫn tuyệt đối ở ngoài workspace; sau khi được duyệt, adapter xác thực descriptor đã mở với đường dẫn hiện tại và kết quả kiểm tra workspace trước khi đọc. Text UTF-8 tối đa 20 MB; mỗi trang tối đa 2.000 dòng và 100 KB, không giới hạn ký tự trên mỗi dòng. Có thể đọc tiếp với `offset`/`columnOffset`. |
 | `write`, `edit`, `apply_patch` | Hỏi | Phải được duyệt trước khi sửa nội dung. `write` tự tạo thư mục cha còn thiếu. |
-| `bash` | Hỏi | Chạy trong workspace đã chọn trên host OS. Mặc định 120 giây, trần 120 giây; kết quả gửi về model tối đa 50.000 byte tổng cộng giữa stdout/stderr và có thông báo nếu bị cắt. |
+| `shell` | Hỏi | Chạy trong workspace đã chọn trên host OS. Mặc định 120 giây, trần 120 giây; kết quả gửi về model tối đa 50.000 byte tổng cộng giữa stdout/stderr và có thông báo nếu bị cắt. |
 | `glob`, `grep` | Cho phép | Tìm kiếm dưới workspace hiệu lực bằng binary `@vscode/ripgrep` đi kèm; bỏ qua các thư mục dependency/generated phổ biến và giới hạn kết quả. `glob` trả về tệp khớp và thư mục cha không rỗng; `grep` giới hạn 500 kết quả và hỏi trước khi tìm trong đường dẫn nhạy cảm. |
 | `webfetch` | Hỏi | Chỉ HTTP(S), timeout 30 giây, tải tối đa 5 MiB và gửi tối đa 50 KiB nội dung về model; có thông báo khi bị cắt. |
 | `todowrite` | Cho phép | Giữ checklist trong bộ nhớ harness, không ghi ra đĩa. |
@@ -96,11 +96,11 @@ Quyết định cho phép của người dùng chỉ áp dụng một lần và 
 | `skill` | Hỏi | Chỉ liệt kê/tải `~/.ccodex/skills/<tên>/SKILL.md`. Khi tải, nội dung được thêm vào tool result/model context sau khi người dùng duyệt. App tạo `~/.ccodex` lúc khởi động; tool tạo `skills/` khi được dùng. |
 | `mcp_*` | Hỏi | Tool được khám phá từ MCP server stdio local đã cấu hình; mỗi lần gọi đều cần duyệt. |
 
-Có thể truyền rule qua `HARNESS_PERMISSION_RULES` dưới dạng JSON array có thứ tự gồm `{ "tool": "*" | "read" | "bash" | ..., "pattern": "glob-like resource pattern", "decision": "allow" | "ask" | "deny" }`. Ví dụ:
+Có thể truyền rule qua `HARNESS_PERMISSION_RULES` dưới dạng JSON array có thứ tự gồm `{ "tool": "*" | "read" | "shell" | ..., "pattern": "glob-like resource pattern", "decision": "allow" | "ask" | "deny" }`. Ví dụ:
 
 ```json
 [
-  { "tool": "bash", "pattern": "git status*", "decision": "allow" },
+  { "tool": "shell", "pattern": "git status*", "decision": "allow" },
   { "tool": "edit", "pattern": "**/*.env*", "decision": "deny" }
 ]
 ```
@@ -133,7 +133,7 @@ Ba khái niệm này khác nhau ở thứ model nhận được:
 
 | Khái niệm | Model nhận được gì | Điều gì xảy ra khi được dùng | Ví dụ trong harness |
 |---|---|---|---|
-| Built-in tool | Tên function, mô tả và schema đối số trong mỗi request gửi model | `ToolRegistry` kiểm tra JSON, yêu cầu permission, chạy adapter rồi trả về một tool message | `read`, `bash`, `grep`, `question` |
+| Built-in tool | Tên function, mô tả và schema đối số trong mỗi request gửi model | `ToolRegistry` kiểm tra JSON, yêu cầu permission, chạy adapter rồi trả về một tool message | `read`, `shell`, `grep`, `question` |
 | MCP tool | Cùng function schema như built-in tool, nhưng gắn namespace của MCP server đã cấu hình | MCP SDK chính thức gửi tool call tới server qua stdio local; ứng dụng hỏi permission mỗi lần gọi | Các mục `MCP_SERVERS` được khám phá ở prompt đầu tiên rồi đăng ký thành `mcp_<server>_<tool>` |
 | Skill | Không nạp function thực thi từ skill; model dùng function `skill` để tìm hoặc tải instruction | Skill tool trả Markdown về dưới dạng tool result; nội dung trở thành model context và có thể hướng dẫn model chọn tool tiếp theo | `~/.ccodex/skills/<tên>/SKILL.md` toàn cục của app |
 
@@ -143,7 +143,7 @@ Tóm lại, tool thực hiện hành động; MCP là protocol và nguồn cung 
 
 Các tool gọi `ToolContext.environment`, không gọi trực tiếp API filesystem hoặc shell của Node. `ExecutionEnvironment` định nghĩa resolve path, đọc/ghi text có giới hạn, liệt kê file, áp dụng patch và chạy command. Interface này là ranh giới thực hiện các thao tác OS cho một turn; `LocalExecutionEnvironment` là implementation chạy trên host hiện tại. Sau này có thể thay bằng OS sandbox hoặc remote executor mà không đổi schema tool hay agent loop. Adapter local hiện tại **không** cô lập OS: permission chỉ là cổng ở tầng ứng dụng, còn host command đã duyệt chạy bằng tài khoản desktop.
 
-Đã triển khai: `read`, `write`, `edit`, `glob`, `grep`, `bash`, `apply_patch`, `lsp`, `webfetch`, `todowrite`, `question`, skill toàn cục trong `.ccodex` và MCP tool qua stdio local. Cấu hình MCP server dùng JSON trong `MCP_SERVERS`: `{ "name", "command", "args", "env", "cwd" }`. Mỗi server khởi chạy trong utility process, kết nối bằng SDK `@modelcontextprotocol/client` chính thức với legacy 2025 handshake, khám phá `tools/list`, rồi đăng ký tool có namespace để model dùng. Host hiện chỉ hỗ trợ transport stdio local; app chưa cấu hình remote HTTP hoặc OAuth.
+Đã triển khai: `read`, `write`, `edit`, `glob`, `grep`, `shell`, `apply_patch`, `lsp`, `webfetch`, `todowrite`, `question`, skill toàn cục trong `.ccodex` và MCP tool qua stdio local. Cấu hình MCP server dùng JSON trong `MCP_SERVERS`: `{ "name", "command", "args", "env", "cwd" }`. Mỗi server khởi chạy trong utility process, kết nối bằng SDK `@modelcontextprotocol/client` chính thức với legacy 2025 handshake, khám phá `tools/list`, rồi đăng ký tool có namespace để model dùng. Host hiện chỉ hỗ trợ transport stdio local; app chưa cấu hình remote HTTP hoặc OAuth.
 
 `question` tạm dừng lần gọi agent hiện tại và hiển thị form trả lời tự do trong chat, có thể kèm lựa chọn gợi ý. Prompt câu hỏi được loại bỏ khoảng trắng đầu/cuối và từ chối nếu chỉ có khoảng trắng. Đây là tương tác hội thoại, không phải yêu cầu permission OS. Manager chờ tối đa 5 phút; khi session bị xóa, manager hủy các câu hỏi đang chờ của session đó để tool call trả lỗi và agent không bị treo chờ UI đã đóng. Permission card vẫn có luồng Allow once / Deny riêng. `todowrite` upsert từng item và phát snapshot đầy đủ; checklist thường thuộc một prompt, checklist goal được giữ qua các prompt cùng chọn goal. Todo state chỉ ở memory của process, không lưu ra đĩa.
 
@@ -166,7 +166,7 @@ Bảng này mô tả implementation tại thời điểm rà soát và các thư
 | `edit` | Tìm và thay thế chính xác một đoạn text, từ chối nếu kết quả không duy nhất | [`diff` / jsdiff](https://github.com/kpdecker/node-diff), 9,2k | jsdiff tính và áp dụng diff, nhưng không triển khai hợp đồng tìm/thay chính xác, duy nhất của tool này. Không thay đổi chỉ vì số sao. |
 | `glob` | Binary `@vscode/ripgrep` và adapter hẹp của app | [`ripgrep`](https://github.com/BurntSushi/ripgrep), 69,7k; [`glob`](https://github.com/isaacs/node-glob), 8,7k; [`fast-glob`](https://github.com/mrmlnc/fast-glob), 2,8k | Đã chọn ripgrep để tìm path nhanh; node-glob gần với ngữ nghĩa Bash glob hơn khi cần khớp thư mục rõ ràng. Ripgrep không trả thư mục rỗng. |
 | `grep` | `@vscode/ripgrep` với JSON output, giới hạn kết quả và kiểm tra path nhạy cảm của app | [`ripgrep`](https://github.com/BurntSushi/ripgrep), 69,7k | Đã chọn; wrapper cung cấp binary, còn app tự xử lý permission, giới hạn output và cách hiển thị. |
-| `bash` | `child_process.spawn` với host shell, timeout, output cap và permission prompt | [`execa`](https://github.com/sindresorhus/execa), 7,6k; [`node-pty`](https://github.com/microsoft/node-pty), 2,1k; [`tree-sitter-bash`](https://github.com/tree-sitter/tree-sitter-bash), 335; [`shell-quote`](https://github.com/ljharb/shell-quote), 66 | Execa giúp chạy process thuận tiện hơn nhưng không phải shell parser hay sandbox. node-pty dành cho terminal tương tác, thêm native/platform packaging; tool command chạy một lần hiện không cần PTY. tree-sitter-bash cung cấp grammar Bash, không có logic permission hoặc PowerShell. shell-quote xử lý quoting/tokenization, không phải scanner bảo mật đầy đủ. Scanner hiện tại của OpenCode nằm trong source của họ, không phải dependency tái sử dụng trực tiếp. |
+| `shell` | `child_process.spawn` với host shell, timeout, output cap và permission prompt | [`execa`](https://github.com/sindresorhus/execa), 7,6k; [`node-pty`](https://github.com/microsoft/node-pty), 2,1k; [`tree-sitter-bash`](https://github.com/tree-sitter/tree-sitter-bash), 335; [`shell-quote`](https://github.com/ljharb/shell-quote), 66 | Execa giúp chạy process thuận tiện hơn nhưng không phải shell parser hay sandbox. node-pty dành cho terminal tương tác, thêm native/platform packaging; tool command chạy một lần hiện không cần PTY. tree-sitter-bash cung cấp grammar Bash, không có logic permission hoặc PowerShell. shell-quote xử lý quoting/tokenization, không phải scanner bảo mật đầy đủ. Scanner hiện tại của OpenCode nằm trong source của họ, không phải dependency tái sử dụng trực tiếp. |
 | `apply_patch` | Package `diff` cùng kiểm tra path/symlink của app | [`diff` / jsdiff](https://github.com/kpdecker/node-diff), 9,2k | Đã dùng để không cần Git trên máy host. App vẫn quản lý policy workspace và ghi file an toàn. |
 | `lsp` | Tự viết framing LSP stdio, request ID, process manager và định tuyến thao tác | [`vscode-languageserver-node`](https://github.com/microsoft/vscode-languageserver-node), 1,8k | Các package `vscode-jsonrpc`/protocol có thể thay framing và protocol type. Chúng không cung cấp language intelligence; việc đó do language server cài riêng đảm nhiệm. |
 | `webfetch` | `fetch` tích hợp trong Node, chặn redirect, giới hạn thời gian/content type/kích thước response | [`undici`](https://github.com/nodejs/undici), 7,7k | Undici là HTTP client của Node và là nền tảng cho Node fetch. Tool GET có giới hạn hiện không cần thêm package; policy SSRF và redirect vẫn thuộc app. |
@@ -246,7 +246,7 @@ Lộ trình học gợi ý theo course outline: (1) kiến trúc harness và ran
 
 - **Lesson 1 — kiến trúc:** phần lớn đã triển khai thành harness headless sau typed Electron IPC, với interface conversation store đang lưu trong memory.
 - **Lesson 2 — agent loop và tool:** phần lớn đã triển khai, gồm streaming, tool dispatch, permission, `question`, MCP, LSP và các tool filesystem/search/shell cốt lõi.
-- **Lesson 3 — sandbox và guardrail:** đã có permission policy và kiểm tra descriptor khi đọc, nhưng tool vẫn dùng `LocalExecutionEnvironment`; đặc biệt `bash` chạy bằng quyền desktop user. Lesson này chưa hoàn thành vì approval của app không phải OS isolation.
+- **Lesson 3 — sandbox và guardrail:** đã có permission policy và kiểm tra descriptor khi đọc, nhưng tool vẫn dùng `LocalExecutionEnvironment`; đặc biệt `shell` chạy bằng quyền desktop user. Lesson này chưa hoàn thành vì approval của app không phải OS isolation.
 - **Lesson 4 — context engineering:** đã có skill toàn cục trong `.ccodex` và truy vấn LSP cơ bản; chưa có memory bền vững hoặc context-window compaction.
 
 Module tiếp theo của course là Lesson 4, context engineering. Phần sandbox thực thi của Lesson 3 được chủ động để sau: chủ dự án chọn chạy trên host theo cách OpenCode thường dùng, để đơn giản hóa hỗ trợ macOS và Windows. Permission prompt vẫn chỉ là policy/UX ở tầng ứng dụng, không cô lập quyền OS. Tiếp tục Lesson 4 (memory, skill, phản hồi LSP và compaction) trong khi giữ rõ ranh giới bảo mật này; chỉ xem lại Docker hoặc OS sandbox native nếu sản phẩm cần isolation.

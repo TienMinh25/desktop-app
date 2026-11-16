@@ -39,7 +39,7 @@ Tool = một khả năng cụ thể mà harness cấp cho model
 | Model | Người nghĩ ra bước tiếp theo | “Đọc test liên quan trước khi sửa.” |
 | Prompt/context builder | Gom giấy tờ cần xem trước khi quyết định | Yêu cầu user, hướng dẫn repo, lịch sử liên quan, kết quả tool |
 | Agent loop | Người điều phối quay lại hỏi/nhận thông tin cho tới khi xong việc | Gọi model → nhận `read` → chạy `read` → gửi kết quả → gọi model lại |
-| Tool definition | Danh sách dụng cụ và cách yêu cầu dùng chúng | `read(path)`, `bash(command)` |
+| Tool definition | Danh sách dụng cụ và cách yêu cầu dùng chúng | `read(path)`, `shell(command)` |
 | Tool registry/dispatcher | Bảng tra xem yêu cầu này giao cho ai | Tìm handler của `read`, kiểm tra input rồi gọi handler |
 | Permission/policy | Hỏi chủ nhà trước khi dùng thứ cần xin phép | Cho đọc file trong project; hỏi trước khi sửa file hoặc chạy lệnh |
 | Execution environment | Nơi công việc thật sự được làm | Filesystem local, shell, browser, container hay remote worker |
@@ -175,7 +175,7 @@ Ngoài unit test cho adapter, xây task mẫu có expected behavior: chọn đú
 
 ### 1.9 Câu hỏi kiểm tra nhanh cho lớp
 
-- Nếu model trả `bash("rm -rf ...")`, thành phần nào có cơ hội chặn nó?
+- Nếu model trả `shell("rm -rf ...")`, thành phần nào có cơ hội chặn nó?
 - Một tool result đã xuất hiện một lần trong transcript có nhất thiết phải gửi lại ở mọi model request không?
 - Nếu process riêng bị crash, app có còn quyền đọc file của user không?
 - Skill hướng dẫn “bỏ qua permission” có thể thay đổi policy thực thi không?

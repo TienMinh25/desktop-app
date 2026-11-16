@@ -34,7 +34,7 @@ export class PermissionManager {
   private readonly pending = new Map<string, PendingPermission>()
   private readonly defaults: Readonly<Record<string, PermissionDecision>> = {
     read: "allow", write: "ask", edit: "ask", glob: "allow", grep: "allow",
-    bash: "ask", apply_patch: "ask", lsp: "ask", webfetch: "ask", todowrite: "allow", skill: "ask", mcp: "ask",
+    shell: "ask", apply_patch: "ask", lsp: "ask", webfetch: "ask", todowrite: "allow", skill: "ask", mcp: "ask",
   }
 
   constructor(

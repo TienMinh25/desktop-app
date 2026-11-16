@@ -42,7 +42,7 @@ Khi thêm hoặc refactor tool, cập nhật cùng lúc: các file được hỗ
 | Giới hạn | Câu hỏi tối đa 2.000 ký tự; tối đa 8 gợi ý, mỗi gợi ý tối đa 200 ký tự; câu trả lời sau trim dài 1–10.000 ký tự. |
 | Timeout và xóa session | Chờ tối đa 5 phút. Hết thời gian hoặc xóa session sẽ hủy lượt hỏi đang chờ; agent nhận lỗi của tool thay vì bị treo chờ người dùng. |
 
-## Shell command (tool hiện đăng ký tên `bash`)
+## Tool `shell`
 
 | Hành vi | Chi tiết |
 | --- | --- |
@@ -51,7 +51,7 @@ Khi thêm hoặc refactor tool, cập nhật cùng lúc: các file được hỗ
 | Thực thi | Mỗi lần gọi chạy một shell process foreground trong workspace; không hỗ trợ PTY hoặc job nền. Yêu cầu permission cho mỗi command. |
 | Giới hạn | Command tối đa 20.000 ký tự; timeout mặc định 120 giây, bị kẹp trong 1–120 giây; tổng stdout + stderr tối đa 50.000 byte. |
 | Dọn process | Timeout hoặc đóng `LocalExecutionEnvironment` sẽ dừng process tree. Trên macOS/Linux gửi `SIGTERM` rồi `SIGKILL` sau một giây nếu cần; Windows dùng `taskkill /T /F`. |
-| Lưu ý | Permission prompt không phải OS sandbox; command được duyệt chạy với quyền OS của user. Đổi tên function/key từ `bash` sang `shell` nằm trong plan riêng. |
+| Lưu ý | Permission prompt không phải OS sandbox; command được duyệt chạy với quyền OS của user. |
 
 ## Điều phối prompt và AgentLoop
 
