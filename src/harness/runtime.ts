@@ -19,6 +19,7 @@ export interface HarnessRuntimeOptions {
   createExecutionEnvironment(workspacePath: string): ExecutionEnvironment
   ensureMcpToolsRegistered?(workspacePath: string): Promise<void>
   askUser?(question: UserQuestion): Promise<string>
+  cancelQuestionsForSession?(sessionId: string): void
   emit(event: HarnessEvent): void
   configurationError?: string | null
 }
@@ -60,6 +61,7 @@ export class HarnessRuntime {
   }
 
   deleteSession(command: DeleteSessionCommand): void {
+    this.options.cancelQuestionsForSession?.(command.sessionId)
     const queue = this.sessionQueues.get(command.sessionId)
     if (!queue) {
       this.cleanupSession(command.sessionId)

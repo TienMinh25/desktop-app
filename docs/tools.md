@@ -32,6 +32,15 @@ Khi thêm hoặc refactor tool, cập nhật cùng lúc: các file được hỗ
 | Lưu trữ | Chỉ ở memory của harness process; không ghi vào database. Xóa session sẽ xóa các checklist của session đó. |
 | Giới hạn | Tối đa 100 item mỗi lần gọi; nội dung mỗi item tối đa 2.000 ký tự. |
 
+## Tool `question`
+
+| Hành vi | Giới hạn / xử lý |
+| --- | --- |
+| Hỏi người dùng | Tool chờ câu trả lời tự do; các `choices` chỉ là gợi ý và người dùng vẫn có thể nhập câu trả lời khác. Không yêu cầu permission OS. |
+| Chuẩn hóa | Trim khoảng trắng đầu/cuối của câu hỏi; từ chối câu hỏi chỉ gồm khoảng trắng. |
+| Giới hạn | Câu hỏi tối đa 2.000 ký tự; tối đa 8 gợi ý, mỗi gợi ý tối đa 200 ký tự; câu trả lời sau trim dài 1–10.000 ký tự. |
+| Timeout và xóa session | Chờ tối đa 5 phút. Hết thời gian hoặc xóa session sẽ hủy lượt hỏi đang chờ; agent nhận lỗi của tool thay vì bị treo chờ người dùng. |
+
 ## Điều phối prompt và AgentLoop
 
 - Runtime giữ FIFO queue riêng cho mỗi session. Prompt đang chạy và prompt đang chờ được báo về UI bằng event; UI không tự quyết định thứ tự chạy.

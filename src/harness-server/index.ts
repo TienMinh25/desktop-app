@@ -44,6 +44,7 @@ const runtime = new HarnessRuntime({
   tools,
   permissions,
   askUser(question) { return questions.ask(question) },
+  cancelQuestionsForSession(sessionId) { questions.cancelSession(sessionId) },
   // Creates the Responses API adapter for the selected model using the configured company endpoint.
   createChatModel(modelName) {
     const endpoint = API_CONFIG.RESPONSES_API_URL
