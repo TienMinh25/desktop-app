@@ -2,7 +2,7 @@
 
 ## Intent
 
-Make the existing `lsp` tool dependable and understandable for the model and the user. The tool is configured by the user through `LSP_SERVERS`; the harness does not install language servers.
+Make the existing `lsp` tool dependable and understandable for the model and the user. Its operations remain implemented in the harness; user configuration is now managed in Customize → Language Servers as described in [`2026-11-17-lsp-server-management.md`](2026-11-17-lsp-server-management.md). The harness does not install language servers.
 
 ## Goals
 
@@ -14,13 +14,13 @@ Make the existing `lsp` tool dependable and understandable for the model and the
 
 ## Non-goals
 
-- Adding more LSP operations, server installation, UI configuration, remote transports, or server auto-detection.
+- Adding more LSP operations, automatic server installation, or remote transports.
 - Replacing the stdio protocol implementation or changing the general permission system.
 - Addressing the broader network/SSRF limitations of `webfetch` in this change.
 
 ## Constraints
 
-- LSP servers are external executables configured with `LSP_SERVERS` JSON.
+- LSP servers remain external executables; the app detects and configures them but does not install them.
 - Keep the implementation dependency-free and follow the repository's existing TypeScript/Bun patterns.
 - Every LSP request continues to require the existing `lsp` permission for the resolved file.
 - `docs/tools.md` remains a concise Vietnamese reference and documents current behavior, not planned UI behavior.
@@ -41,6 +41,10 @@ Make the existing `lsp` tool dependable and understandable for the model and the
 - Successful diagnostics preserve the existing array result; only a timeout returns `{ "diagnostics": [...], "timedOut": true }`, distinguishing no publication from an empty published list.
 - Client health is exposed as a read-only `isRunning` predicate and the manager removes unhealthy clients from its cache.
 - Oversize results return `{ "truncated": true, "preview": "<prefix of serialized JSON>" }` within the same byte budget.
+
+## Follow-up state (2026-11-17)
+
+The original design assumed users would set `LSP_SERVERS` manually. The approved app-managed settings flow now supersedes that assumption: users manage local profiles in Customize → Language Servers, while the app still does not install executables. See [`2026-11-17-lsp-server-management.md`](2026-11-17-lsp-server-management.md) for the current setup and runtime contract.
 
 ## Review reference
 

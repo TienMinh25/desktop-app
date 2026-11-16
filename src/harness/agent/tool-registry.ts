@@ -22,6 +22,7 @@ export interface ToolPreparation {
 
 export interface HarnessTool {
   definition: ChatToolDefinition
+  isAvailable?(context: ToolContext): boolean
   /**
    * Request permissions before running prepare. Use this when the preparation
    * step itself must be gated (for example, listing skills or scanning workspace
@@ -49,13 +50,16 @@ export class ToolRegistry {
     this.tools.set(name, tool)
   }
 
-  definitions(): ChatToolDefinition[] {
-    return [...this.tools.values()].map((tool) => tool.definition)
+  definitions(context?: ToolContext): ChatToolDefinition[] {
+    return [...this.tools.values()]
+      .filter((tool) => !context || !tool.isAvailable || tool.isAvailable(context))
+      .map((tool) => tool.definition)
   }
 
   async execute(name: string, argumentsJson: string, context: ToolContext, callId: string): Promise<FunctionCallOutputItem> {
     const tool = this.tools.get(name)
     if (!tool) throw new Error(`Unknown tool: ${name}`)
+    if (tool.isAvailable && !tool.isAvailable(context)) throw new Error(`Tool ${name} is not available in this workspace`)
     let args: unknown
     try {
       args = JSON.parse(argumentsJson)

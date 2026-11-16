@@ -8,7 +8,7 @@ export function createLspTool(manager: LspManager): HarnessTool {
   return {
     definition: definition(
       "lsp",
-      "Query a configured language server for definition, references, hover, or diagnostics. Set LSP_SERVERS to a JSON array of server configs. Positions are 1-based and default to line 1, character 1; diagnostics ignores position. Results are JSON capped at 30,000 bytes.",
+      "Query an enabled language server for definition, references, hover, or diagnostics. The app manages installed servers in Customize → Language Servers. Positions are 1-based and default to line 1, character 1; diagnostics ignores position. Results are JSON capped at 30,000 bytes.",
       {
         operation: { type: "string", enum: ["definition", "references", "hover", "diagnostics"], description: "Language-server operation" },
         path: { type: "string", description: "Workspace-relative or absolute source file path" },
@@ -17,6 +17,7 @@ export function createLspTool(manager: LspManager): HarnessTool {
       },
       ["operation", "path"],
     ),
+    isAvailable: () => manager.isConfigured(),
     async prepare(value, context) {
       const args = objectArgs(value)
       const operationValue = stringArg(args, "operation")

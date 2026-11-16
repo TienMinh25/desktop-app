@@ -6,16 +6,18 @@ import { ConnectorDetailView } from "./connectors/ConnectorDetailView"
 import { ConnectorsTabView } from "./connectors/ConnectorsTabView"
 import styles from "./CustomizePanel.module.scss"
 import { SkillsTabView } from "./skills/SkillsTabView"
+import { LanguageServersTabView } from "./lsp/LanguageServersTabView"
 
 interface CustomizePanelProps {
   onShowToast: (message: string) => void
+  initialTab?: "skills" | "connectors" | "lsp"
 }
 
-type MainTab = "skills" | "connectors"
+type MainTab = "skills" | "connectors" | "lsp"
 type ConnectorSubTab = "yours" | "discover"
 
-export function CustomizePanel({ onShowToast }: CustomizePanelProps) {
-  const [mainTab, setMainTab] = useState<MainTab>("connectors")
+export function CustomizePanel({ onShowToast, initialTab = "connectors" }: CustomizePanelProps) {
+  const [mainTab, setMainTab] = useState<MainTab>(initialTab)
   const [subTab, setSubTab] = useState<ConnectorSubTab>("discover")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
@@ -253,35 +255,37 @@ export function CustomizePanel({ onShowToast }: CustomizePanelProps) {
                 Connectors
               </button>
 
-              <span className={styles.tabDivider} />
+              <button
+                type="button"
+                className={`${styles.tabButton} ${mainTab === "lsp" ? styles.activeTab : ""}`}
+                onClick={() => {
+                  setSelectedConnector(null)
+                  setMainTab("lsp")
+                }}
+              >
+                Language Servers
+              </button>
 
-              <button
-                type="button"
-                className={`${styles.tabButton} ${
-                  mainTab === "connectors" && subTab === "yours" ? styles.activeTab : ""
-                }`}
-                onClick={() => {
-                  setMainTab("connectors")
-                  setSubTab("yours")
-                }}
-              >
-                Yours
-              </button>
-              <button
-                type="button"
-                className={`${styles.tabButton} ${
-                  mainTab === "connectors" && subTab === "discover" ? styles.activeTab : ""
-                }`}
-                onClick={() => {
-                  setMainTab("connectors")
-                  setSubTab("discover")
-                }}
-              >
-                Discover
-              </button>
+              {mainTab === "connectors" && <>
+                <span className={styles.tabDivider} />
+                <button
+                  type="button"
+                  className={`${styles.tabButton} ${subTab === "yours" ? styles.activeTab : ""}`}
+                  onClick={() => setSubTab("yours")}
+                >
+                  Yours
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.tabButton} ${subTab === "discover" ? styles.activeTab : ""}`}
+                  onClick={() => setSubTab("discover")}
+                >
+                  Discover
+                </button>
+              </>}
             </div>
 
-            <div className={styles.toolbarActions}>
+            {mainTab === "connectors" && <div className={styles.toolbarActions}>
               <div className={styles.searchWrapper}>
                 <svg className={styles.searchIcon} viewBox="0 0 16 16" fill="none">
                   <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4" />
@@ -349,11 +353,13 @@ export function CustomizePanel({ onShowToast }: CustomizePanelProps) {
                   </div>
                 )}
               </div>
-            </div>
+            </div>}
           </div>
 
           {mainTab === "skills" ? (
             <SkillsTabView />
+          ) : mainTab === "lsp" ? (
+            <LanguageServersTabView onShowToast={onShowToast} />
           ) : (
             <ConnectorsTabView
               subTab={subTab}

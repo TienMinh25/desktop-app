@@ -4,6 +4,7 @@ export const HARNESS_COMMAND_TYPES = {
   SESSION_DELETE: "session.delete",
   PERMISSION_RESPOND: "permission.respond",
   QUESTION_RESPOND: "question.respond",
+  LSP_CONFIGURE: "lsp.configure",
 } as const
 
 export const HARNESS_EVENT_TYPES = {

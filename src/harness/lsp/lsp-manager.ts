@@ -1,16 +1,28 @@
 import { extname } from "node:path"
 import { LspClient } from "./lsp-client"
 import type { LspOperation } from "./types"
+import type { LspServerConfig } from "../../contracts/lsp"
 
 interface ServerConfig { extensions: string[]; command: string; args?: string[]; languageId?: string; cwd?: string; env?: Record<string, string> }
 const MAX_RESULT_BYTES = 30_000
 export class LspManager {
   private readonly clients = new Map<string, LspClient>()
+  private configuredServers?: ServerConfig[]
   constructor(private readonly serializedConfig?: string) {}
+
+  setConfiguration(servers: LspServerConfig[]) {
+    this.close()
+    this.configuredServers = servers.map(parseServerConfig)
+  }
+
+  isConfigured() {
+    try { return this.configs().length > 0 }
+    catch { return false }
+  }
 
   async execute(operation: LspOperation, filePath: string, rootPath: string, text: string, line = 1, character = 1): Promise<string> {
     const config = this.configs().find((item) => item.extensions.includes(extname(filePath).toLowerCase()))
-    if (!config) throw new Error(`No language server configured for ${extname(filePath) || "extensionless files"}. Configure LSP_SERVERS.`)
+    if (!config) throw new Error(`No enabled language server supports ${extname(filePath) || "extensionless files"}. Enable one in Customize → Language Servers.`)
     const key = `${config.command}\0${JSON.stringify(config.args ?? [])}\0${config.cwd ?? rootPath}\0${JSON.stringify(config.env ?? {})}`
     let client = this.clients.get(key)
     if (client && !client.isRunning) {
@@ -44,6 +56,7 @@ export class LspManager {
   close() { for (const client of this.clients.values()) client.close(); this.clients.clear() }
 
   private configs(): ServerConfig[] {
+    if (this.configuredServers) return this.configuredServers
     if (!this.serializedConfig) return []
     let parsed: unknown
     try { parsed = JSON.parse(this.serializedConfig) as unknown }
@@ -106,6 +119,6 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 }
 
 function languageFromExtension(extension: string) {
-  const map: Record<string, string> = { ".ts": "typescript", ".tsx": "typescriptreact", ".js": "javascript", ".jsx": "javascriptreact", ".py": "python", ".rs": "rust", ".go": "go" }
+  const map: Record<string, string> = { ".ts": "typescript", ".tsx": "typescriptreact", ".mts": "typescript", ".cts": "typescript", ".js": "javascript", ".jsx": "javascriptreact", ".mjs": "javascript", ".cjs": "javascript", ".py": "python", ".pyi": "python", ".rs": "rust", ".go": "go" }
   return map[extension.toLowerCase()] ?? "plaintext"
 }

@@ -21,11 +21,12 @@ export class AgentLoop {
 
     while (true) {
       let outputItems: ResponseOutputItem[] = []
+      const toolDefinitions = this.tools.definitions(input.context)
       for await (const event of model.stream({
         model: input.modelName,
         input: messages,
         stream: true,
-        ...(this.tools.definitions().length ? { tools: this.tools.definitions() } : {}),
+        ...(toolDefinitions.length ? { tools: toolDefinitions } : {}),
       }, input.signal)) {
         if (event.type === "text.delta") {
           assistantText += event.text

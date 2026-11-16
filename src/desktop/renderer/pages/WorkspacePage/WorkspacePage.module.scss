@@ -32,3 +32,16 @@
   color: $text-primary;
   letter-spacing: -0.5px;
 }
+
+.lspSetupLink {
+  margin-top: 14px;
+  border: 0;
+  background: transparent;
+  color: $text-secondary;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+
+  &:hover { color: $text-primary; }
+}

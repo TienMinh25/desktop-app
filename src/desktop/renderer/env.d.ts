@@ -3,6 +3,7 @@ import type { HarnessCommand } from "../../contracts/commands"
 import type { HarnessEvent } from "../../contracts/events"
 import type { McpConnectorItem, McpListServersParams, McpListServersResponse } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
+import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 
 declare global {
   interface SelectedFolderInfo {
@@ -17,6 +18,10 @@ declare global {
     selectFolder: () => Promise<SelectedFolderInfo | null>
     listMcpServers: (params?: McpListServersParams) => Promise<McpListServersResponse>
     getMcpServerVersion: (serverName: string, version?: string) => Promise<McpConnectorItem>
+    listLspServers: () => Promise<LspServerStatus[]>
+    rescanLspServers: () => Promise<LspServerStatus[]>
+    saveLspSettings: (settings: LspSettings) => Promise<LspServerStatus[]>
+    openLspGuide: (serverId: string) => Promise<{ opened: boolean }>
     checkForUpdates: () => Promise<AppUpdaterState>
     startUpdateDownload: () => Promise<{ started: boolean }>
     installDownloadedUpdate: () => void

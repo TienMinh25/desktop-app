@@ -74,6 +74,8 @@ export function WorkspacePage({
   const [promptText, setPromptText] = useState("")
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
+  const [customizeInitialTab, setCustomizeInitialTab] = useState<"connectors" | "lsp">("connectors")
+  const [hasEnabledLspServer, setHasEnabledLspServer] = useState<boolean | null>(null)
   const [turns, setTurns] = useState<Record<string, TurnState>>({})
   const [queuedPrompts, setQueuedPrompts] = useState<Record<string, Array<{ requestId: string; prompt: string }>>>({})
 
@@ -150,6 +152,16 @@ export function WorkspacePage({
     })
   }, [])
 
+  useEffect(() => {
+    let active = true
+    void window.desktop.listLspServers().then((servers) => {
+      if (active) setHasEnabledLspServer(servers.some((server) => server.enabled))
+    }).catch(() => {
+      if (active) setHasEnabledLspServer(false)
+    })
+    return () => { active = false }
+  }, [isCustomizeOpen])
+
   const handleNewChat = () => {
     setIsCustomizeOpen(false)
     createNewChat(selectedProjectId)
@@ -194,7 +206,10 @@ export function WorkspacePage({
       activeSessionId={isCustomizeOpen ? null : activeSessionId}
       expandedProjects={expandedProjects}
       isCustomizeActive={isCustomizeOpen}
-      onSelectCustomize={() => setIsCustomizeOpen(true)}
+      onSelectCustomize={() => {
+        setCustomizeInitialTab("connectors")
+        setIsCustomizeOpen(true)
+      }}
       onSelectProject={handleSelectProject}
       onToggleExpandProject={toggleExpandProject}
       onSelectSession={handleSelectSession}
@@ -212,7 +227,7 @@ export function WorkspacePage({
       sidebarContent={sidebarContent}
     >
       {isCustomizeOpen ? (
-        <CustomizePanel onShowToast={onShowToast} />
+        <CustomizePanel onShowToast={onShowToast} initialTab={customizeInitialTab} />
       ) : (
         <>
           {turn || activeQueue.length > 0 || activeSession?.hasHistory ? (
@@ -263,6 +278,12 @@ export function WorkspacePage({
                 />
               </svg>
               <h1 className={styles.heroTitle}>What should we build?</h1>
+              {hasEnabledLspServer === false && <button className={styles.lspSetupLink} type="button" onClick={() => {
+                setCustomizeInitialTab("lsp")
+                setIsCustomizeOpen(true)
+              }}>
+                Set up LSP for code navigation
+              </button>}
             </div>
           )}
 

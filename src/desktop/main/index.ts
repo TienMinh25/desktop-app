@@ -2,7 +2,7 @@ import { basename } from "node:path"
 import { join } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain, screen, utilityProcess, type UtilityProcess } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, screen, shell, utilityProcess, type UtilityProcess } from "electron"
 import electronUpdater from "electron-updater"
 import { HARNESS_COMMAND_TYPES } from "../../contracts/message-types"
 import { PermissionResponseCommandSchema, QuestionResponseCommandSchema } from "../../contracts/commands"
@@ -10,13 +10,22 @@ import type { HarnessEvent } from "../../contracts/events"
 import { isHarnessCommand } from "../../contracts/guards"
 import type { McpListServersParams } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
+import type { LspServerConfig, LspSettings } from "../../contracts/lsp"
 import { McpRegistryClient } from "../../domain/mcp-registry/mcp-registry-client"
+import { LSP_SERVER_CATALOG } from "../../domain/lsp/lsp-registry"
+import { LspSettingsStore } from "./lsp-settings-store"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 
 const { autoUpdater } = electronUpdater
 
 let harnessProcess: UtilityProcess | null = null
+let lspSettingsStore: LspSettingsStore | null = null
 const mcpRegistryClient = new McpRegistryClient()
+
+function getLspSettingsStore(): LspSettingsStore {
+    if (!lspSettingsStore) throw new Error("LSP settings are not ready")
+    return lspSettingsStore
+}
 
 function broadcastUpdaterState(state: AppUpdaterState) {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -84,7 +93,7 @@ function forwardHarnessCommand(command: unknown) {
 }
 
 ipcMain.on(IPC_CHANNELS.HARNESS_COMMAND, (event, command: unknown) => {
-    if (!BrowserWindow.fromWebContents(event.sender) || !isHarnessCommand(command) || command.type === HARNESS_COMMAND_TYPES.PERMISSION_RESPOND || command.type === HARNESS_COMMAND_TYPES.QUESTION_RESPOND) return
+    if (!BrowserWindow.fromWebContents(event.sender) || !isHarnessCommand(command) || command.type === HARNESS_COMMAND_TYPES.PERMISSION_RESPOND || command.type === HARNESS_COMMAND_TYPES.QUESTION_RESPOND || command.type === HARNESS_COMMAND_TYPES.LSP_CONFIGURE) return
     if (!harnessProcess) throw new Error("Harness process is not running")
     forwardHarnessCommand(command)
 })
@@ -168,6 +177,32 @@ ipcMain.handle(
         return await mcpRegistryClient.getServerVersion(payload.serverName, payload.version ?? "latest")
     },
 )
+ipcMain.handle(IPC_CHANNELS.LSP_LIST_SERVERS, async (event) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return []
+    return await getLspSettingsStore().list()
+})
+ipcMain.handle(IPC_CHANNELS.LSP_RESCAN_SERVERS, async (event) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return []
+    const statuses = await getLspSettingsStore().rescan()
+    const servers = await getLspSettingsStore().harnessConfigs()
+    forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers })
+    return statuses
+})
+ipcMain.handle(IPC_CHANNELS.LSP_SAVE_SETTINGS, async (event, settings: LspSettings) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Untrusted LSP settings request")
+    const store = getLspSettingsStore()
+    const statuses = await store.save(settings)
+    const servers = await store.harnessConfigs()
+    forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers })
+    return statuses
+})
+ipcMain.handle(IPC_CHANNELS.LSP_OPEN_GUIDE, async (event, serverId: string) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return { opened: false }
+    const server = LSP_SERVER_CATALOG.find((item) => item.id === serverId)
+    if (!server) return { opened: false }
+    await shell.openExternal(server.guideUrl)
+    return { opened: true }
+})
 ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
     if (!app.isPackaged) {
         return { status: "available", version: "1.2.0" } satisfies AppUpdaterState
@@ -197,8 +232,16 @@ ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
 
 app.whenReady().then(async () => {
     await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
+    lspSettingsStore = new LspSettingsStore(app.getPath("userData"))
     setupAutoUpdater()
     startHarnessProcess()
+    let initialLspServers: LspServerConfig[] = []
+    try {
+        initialLspServers = await getLspSettingsStore().harnessConfigs()
+    } catch (error) {
+        console.error("Could not load saved LSP settings; starting without language servers.", error)
+    }
+    forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers: initialLspServers })
     createWindow()
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {

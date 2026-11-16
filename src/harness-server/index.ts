@@ -32,7 +32,7 @@ if (!parentPort) throw new Error("Harness process must be started by Electron ut
 const permissionConfig = parsePermissionRules(process.env.HARNESS_PERMISSION_RULES)
 
 const tools = new ToolRegistry()
-const lspManager = new LspManager(process.env.LSP_SERVERS)
+const lspManager = new LspManager()
 for (const tool of [readTool, writeTool, editTool, globTool, grepTool, shellTool, applyPatchTool, createLspTool(lspManager), webfetchTool, todoWriteTool, skillTool, questionTool]) tools.register(tool)
 const permissions = new PermissionManager((event) => parentPort.postMessage(event), permissionConfig.rules)
 const questions = new QuestionManager((event) => parentPort.postMessage(event))
@@ -80,6 +80,9 @@ parentPort.on("message", (messageEvent) => {
       return
     case HARNESS_COMMAND_TYPES.SESSION_DELETE:
       runtime.deleteSession(command)
+      return
+    case HARNESS_COMMAND_TYPES.LSP_CONFIGURE:
+      lspManager.setConfiguration(command.servers)
       return
     default:
       return assertNever(command)
