@@ -1,5 +1,6 @@
 import styles from "./ConversationStream.module.scss"
 import { useState } from "react"
+import type { TodoItem } from "../../../../../../contracts/todos"
 
 interface ConversationStreamProps {
   userPrompt: string
@@ -10,7 +11,8 @@ interface ConversationStreamProps {
   question: { id: string; prompt: string; choices?: string[] } | null
   onPermissionDecision: (id: string, decision: "allow" | "deny") => void
   onQuestionAnswer: (id: string, answer: string) => void
-  todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }>
+  todos: TodoItem[]
+  pendingPrompts: Array<{ requestId: string; prompt: string }>
   toolStatus: string | null
 }
 
@@ -24,6 +26,7 @@ export function ConversationStream({
   onPermissionDecision,
   onQuestionAnswer,
   todos,
+  pendingPrompts,
   toolStatus,
 }: ConversationStreamProps) {
   const [answer, setAnswer] = useState("")
@@ -36,6 +39,12 @@ export function ConversationStream({
   }
   return (
     <div className={styles.chatScrollArea}>
+      {pendingPrompts.length > 0 && <section className={styles.todoCard} aria-label="Queued prompts">
+        <strong>Queued prompts</strong>
+        {pendingPrompts.map((item, index) => <div key={item.requestId} className={styles.todoPending}>
+          {index + 1}. {item.prompt}
+        </div>)}
+      </section>}
       <div className={styles.msgUserRow}>
         <div className={styles.msgUserBubble}>{userPrompt}</div>
       </div>
@@ -67,7 +76,7 @@ export function ConversationStream({
         </section>}
         {todos.length > 0 && <section className={styles.todoCard}>
           <strong>Tasks</strong>
-          {todos.map((todo, index) => <div key={`${todo.content}-${index}`} className={todo.status === "pending" ? styles.todoPending : undefined}>
+          {todos.map((todo) => <div key={todo.id} className={todo.status === "pending" ? styles.todoPending : undefined}>
             {todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "◉" : "○"} {todo.content}
           </div>)}
         </section>}

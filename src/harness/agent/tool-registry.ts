@@ -2,6 +2,7 @@ import type { ChatToolDefinition, FunctionCallOutputItem, ResponseInputContent }
 import type { ExecutionEnvironment } from "../execution/execution-environment"
 import type { PermissionRequirement } from "../permissions/permission-manager"
 import type { UserQuestion } from "../interaction/question-manager"
+import type { TodoInput, TodoItem } from "../../contracts/todos"
 
 export interface ToolContext {
   workspacePath: string
@@ -10,7 +11,8 @@ export interface ToolContext {
   environment: ExecutionEnvironment
   requirePermission(input: PermissionRequirement): Promise<void>
   askUser(input: Omit<UserQuestion, "requestId" | "sessionId">): Promise<string>
-  notifyTodoUpdate(todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }>): void
+  todoScope: { type: "request" | "goal"; id: string }
+  updateTodos(items: TodoInput[]): TodoItem[]
 }
 
 export interface ToolPreparation {

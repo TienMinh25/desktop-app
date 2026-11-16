@@ -21,3 +21,20 @@ Tham khảo: [File inputs](https://developers.openai.com/api/docs/guides/file-in
 ## Quy ước cập nhật
 
 Khi thêm hoặc refactor tool, cập nhật cùng lúc: các file được hỗ trợ, mapping Responses API, giới hạn mỗi file, giới hạn session/request, quyền/approval và behavior đặc biệt. Viết bằng tiếng Việt, ngắn gọn và dùng bảng ở trên làm nguồn tra cứu chung.
+
+## Tool `todowrite`
+
+| Phạm vi | Hành vi |
+| --- | --- |
+| Prompt thường | Checklist mới theo từng user prompt; mọi vòng gọi model và tool trong cùng prompt dùng chung checklist. |
+| Prompt có goal | Dùng `goalId` ổn định cùng session làm scope; các prompt tiếp theo chọn cùng goal tiếp tục checklist đó. Contract đã sẵn sàng, UI chọn goal chưa nằm trong thay đổi này. |
+| Cập nhật | Upsert theo `id`; nếu chưa có `id`, ghép với item đang có cùng nội dung. Item bị bỏ khỏi payload vẫn giữ nguyên. Mỗi lần cập nhật trả và phát snapshot đầy đủ. |
+| Lưu trữ | Chỉ ở memory của harness process; không ghi vào database. Xóa session sẽ xóa các checklist của session đó. |
+| Giới hạn | Tối đa 100 item mỗi lần gọi; nội dung mỗi item tối đa 2.000 ký tự. |
+
+## Điều phối prompt và AgentLoop
+
+- Runtime giữ FIFO queue riêng cho mỗi session. Prompt đang chạy và prompt đang chờ được báo về UI bằng event; UI không tự quyết định thứ tự chạy.
+- Một `AgentLoop` coordinator được tạo lười và cache theo session. Khi prompt kết thúc, model/transport của prompt đó không được giữ trong coordinator.
+- Mỗi prompt tạo model và tool context riêng. Những lượt gọi model tiếp theo do tool call vẫn chạy bên trong cùng `AgentLoop.run` và cùng todo scope.
+- Xóa session sẽ bỏ các prompt chưa chạy, để prompt đang chạy kết thúc, rồi giải phóng agent và todo state của session.

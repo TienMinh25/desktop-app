@@ -13,18 +13,15 @@ export interface AgentLoopInput {
 }
 
 export class AgentLoop {
-  constructor(
-    private readonly model: ChatModel,
-    private readonly tools: ToolRegistry,
-  ) {}
+  constructor(private readonly tools: ToolRegistry) {}
 
-  async run(input: AgentLoopInput): Promise<{ messages: ResponseInputItem[]; assistantText: string }> {
+  async run(model: ChatModel, input: AgentLoopInput): Promise<{ messages: ResponseInputItem[]; assistantText: string }> {
     const messages = [...input.messages]
     let assistantText = ""
 
     while (true) {
       let outputItems: ResponseOutputItem[] = []
-      for await (const event of this.model.stream({
+      for await (const event of model.stream({
         model: input.modelName,
         input: messages,
         stream: true,

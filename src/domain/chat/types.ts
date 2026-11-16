@@ -70,6 +70,7 @@ export type ChatStreamEvent =
 
 export interface ChatModel {
   stream(request: ResponsesRequest, signal?: AbortSignal): AsyncIterable<ChatStreamEvent>
+  close?(): Promise<void>
 }
 
 export interface ChatClientConfig {

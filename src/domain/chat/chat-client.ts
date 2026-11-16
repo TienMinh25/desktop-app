@@ -152,6 +152,10 @@ export class ChatClient implements ChatModel {
       signal?.removeEventListener("abort", forwardAbort)
     }
   }
+
+  async close(): Promise<void> {
+    await this.http.close()
+  }
 }
 
 function enforceRequestMediaLimits(input: ResponseInputItem[]) {

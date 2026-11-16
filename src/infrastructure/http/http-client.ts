@@ -56,4 +56,8 @@ export class StreamingHttpClient {
       dispatcher: this.dispatcher,
     })
   }
+
+  close(): Promise<void> {
+    return this.dispatcher.close()
+  }
 }
