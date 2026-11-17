@@ -232,8 +232,13 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
           <div className={styles.helpRow}>
             Need help signing in?{" "}
-            <a href={`mailto:${APP_CONFIG.IT_HELPDESK_EMAIL}`} className={styles.helpLink}>
-              Contact IT Support
+            <a
+              href={APP_CONFIG.AMS_SUPPORT_URL}
+              target="_blank"
+              rel="noreferrer"
+              className={styles.helpLink}
+            >
+              Contact AMS support
             </a>
           </div>
         </div>

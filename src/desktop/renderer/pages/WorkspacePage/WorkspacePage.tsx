@@ -58,7 +58,6 @@ export function WorkspacePage({
   const {
     assignedProjects,
     selectedProjectId,
-    currentProject,
     sessions,
     activeSessionId,
     activeSession,

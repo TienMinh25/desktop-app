@@ -13,6 +13,7 @@ declare global {
   }
 
   interface DesktopBridge {
+    platform?: string
     minimizeWindow: () => void
     maximizeWindow: () => void
     closeWindow: () => void

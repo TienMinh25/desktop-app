@@ -8,6 +8,7 @@ import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 
 contextBridge.exposeInMainWorld("desktop", {
+  platform: process.platform,
   minimizeWindow: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
   maximizeWindow: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
   closeWindow: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),

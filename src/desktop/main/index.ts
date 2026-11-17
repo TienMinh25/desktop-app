@@ -243,6 +243,12 @@ function createWindow() {
             nodeIntegration: false,
         }
     })
+    window.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("mailto:")) {
+            void shell.openExternal(url)
+        }
+        return { action: "deny" }
+    })
     const rendererUrl = process.env.ELECTRON_RENDERER_URL
     if (rendererUrl) {
         void window.loadURL(rendererUrl)
