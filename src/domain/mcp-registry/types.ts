@@ -87,6 +87,6 @@ export interface McpRegistryListRawPayload {
 }
 
 export interface McpRegistryClientConfig {
-  baseUrl?: string
-  apiVersion?: string
+  baseUrl: string
+  apiVersion: string
 }

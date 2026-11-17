@@ -19,9 +19,9 @@ export class LspSettingsStore {
 
   constructor(
     ccodexDirectory: string,
-    private readonly environment: NodeJS.ProcessEnv = process.env,
-    private readonly platform: NodeJS.Platform = process.platform,
-    private readonly homeDirectory = process.env.HOME ?? process.env.USERPROFILE ?? "",
+    private readonly environment: NodeJS.ProcessEnv,
+    private readonly platform: NodeJS.Platform,
+    private readonly homeDirectory: string,
   ) {
     this.settingsPath = join(ccodexDirectory, "settings.json")
   }

@@ -3,7 +3,9 @@ import type { HarnessEvent } from "../contracts/events"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../contracts/message-types"
 import { isHarnessCommand } from "../contracts/guards"
 import { ChatClient } from "../domain/chat/chat-client"
-import { API_CONFIG } from "../infrastructure/config/api-config"
+import { validate } from "../infrastructure/config/environment"
+import { BackendHttpClient } from "../infrastructure/http/backend-http-client"
+import { AuthTokenProvider } from "./auth-token-provider"
 import { HarnessRuntime } from "../harness/runtime"
 import { PermissionManager } from "../harness/permissions/permission-manager"
 import { QuestionManager } from "../harness/interaction/question-manager"
@@ -28,6 +30,8 @@ import { questionTool } from "../harness/tools/question-tool"
 
 const parentPort = process.parentPort
 if (!parentPort) throw new Error("Harness process must be started by Electron utilityProcess.fork")
+const envConfig = validate(process.env)
+const authTokenProvider = new AuthTokenProvider(parentPort)
 
 const permissionConfig = parsePermissionRules(process.env.HARNESS_PERMISSION_RULES)
 
@@ -45,11 +49,9 @@ const runtime = new HarnessRuntime({
   permissions,
   askUser(question) { return questions.ask(question) },
   cancelQuestionsForSession(sessionId) { questions.cancelSession(sessionId) },
-  // Creates the Responses API adapter for the selected model using the configured company endpoint.
+  // Creates the authenticated backend stream adapter for the selected model.
   createChatModel(modelName) {
-    const endpoint = API_CONFIG.RESPONSES_API_URL
-    if (!endpoint) throw new Error("RESPONSES_API_URL is not configured")
-    return new ChatClient({ endpoint, model: modelName, accessToken: API_CONFIG.CHAT_ACCESS_TOKEN })
+    return new ChatClient({ model: modelName }, new BackendHttpClient(envConfig.BACKEND_HOST, authTokenProvider))
   },
   createExecutionEnvironment(workspacePath) { return new LocalExecutionEnvironment(workspacePath) },
   // Lazily connects configured MCP servers and registers their tools before the model sees tool definitions.
@@ -93,4 +95,4 @@ function assertNever(value: never): never {
   throw new Error(`Unhandled harness command: ${JSON.stringify(value)}`)
 }
 
-process.once("exit", () => { questions.close(); mcpHost.close(); lspManager.close() })
+process.once("exit", () => { questions.close(); mcpHost.close(); lspManager.close(); authTokenProvider.close() })

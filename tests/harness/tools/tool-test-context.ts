@@ -4,11 +4,12 @@ import { join } from "node:path"
 import type { PermissionRequirement } from "../../../src/harness/permissions/permission-manager"
 import { LocalExecutionEnvironment } from "../../../src/harness/execution/local-execution-environment"
 import type { ToolContext } from "../../../src/harness/agent/tool-registry"
+import type { TodoInput } from "../../../src/contracts/todos"
 
 export async function createToolTestContext() {
   const workspacePath = await mkdtemp(join(tmpdir(), "harness-tool-"))
   const permissionRequirements: PermissionRequirement[] = []
-  const todoUpdates: Array<Array<{ content: string; status: "pending" | "in_progress" | "completed" }>> = []
+  const todoUpdates: TodoInput[][] = []
   const context: ToolContext = {
     workspacePath,
     requestId: "request-test",
@@ -16,7 +17,11 @@ export async function createToolTestContext() {
     environment: new LocalExecutionEnvironment(workspacePath),
     async requirePermission(requirement) { permissionRequirements.push(requirement) },
     async askUser() { return "test answer" },
-    notifyTodoUpdate(todos) { todoUpdates.push(structuredClone(todos)) },
+    todoScope: { type: "request", id: "request-test" },
+    updateTodos(todos) {
+      todoUpdates.push(structuredClone(todos))
+      return todos.map((todo, index) => ({ ...todo, id: todo.id ?? `todo-${index + 1}` }))
+    },
   }
   return {
     context,

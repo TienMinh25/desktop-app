@@ -50,7 +50,7 @@ it("rejects a workspace read if its parent directory is replaced by an external 
 it("marks external and dotenv reads as requiring extra approval", async () => {
   const prepared = await readTool.prepare!({ path: join(externalDirectory, ".env") }, testContext.context)
   expect(prepared.permissionRequests[0]).toMatchObject({ outsideWorkspace: true, sensitive: true, tool: "read" })
-  expect(await readTool.execute({ path: join(externalDirectory, ".env") }, testContext.context, prepared.data)).toBe("TOKEN=test")
+  expect(await readTool.execute({ path: join(externalDirectory, ".env") }, testContext.context, prepared.data)).toBe("Lines 1-1 of 1 (end of file)\nTOKEN=test")
 })
 
 it("marks SSH private key paths as sensitive even inside the workspace", async () => {

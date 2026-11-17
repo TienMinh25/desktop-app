@@ -36,6 +36,70 @@
   margin-right: auto;
   z-index: 80;
   -webkit-app-region: no-drag;
+
+  &.notificationWrapRight {
+    margin-right: 0;
+    margin-left: auto;
+    justify-content: flex-end;
+
+    .notificationPanel {
+      left: auto;
+      right: -7px;
+    }
+  }
+}
+
+.macTrafficLights {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: -4px;
+  margin-right: auto;
+  -webkit-app-region: no-drag;
+}
+
+.macDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+
+  &:active {
+    filter: brightness(0.85);
+  }
+}
+
+.macDotClose {
+  background: #ff5f56;
+  border-color: #e0443e;
+}
+
+.macDotMinimize {
+  background: #ffbd2e;
+  border-color: #dea123;
+}
+
+.macDotMaximize {
+  background: #27c93f;
+  border-color: #1aab29;
+}
+
+.macDotIcon {
+  width: 8px;
+  height: 8px;
+  color: rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.macTrafficLights:hover .macDotIcon {
+  opacity: 1;
 }
 
 .notificationBell {

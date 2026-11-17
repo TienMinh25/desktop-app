@@ -4,7 +4,7 @@ import { definition, objectArgs, permissionRequest, stringArg } from "./tool-uti
 
 export const globTool: HarnessTool = {
   definition: definition("glob", "List workspace files matching a simple glob pattern (*, **, ?).", { pattern: { type: "string" } }, ["pattern"]),
-  async prepare(value, context) {
+  async prepare(value) {
     const pattern = stringArg(objectArgs(value), "pattern")
     globToRegExp(pattern)
     return { permissionRequests: [permissionRequest("glob", "list matching workspace files for", pattern, true)] }

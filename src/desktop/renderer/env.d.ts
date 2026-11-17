@@ -4,6 +4,7 @@ import type { HarnessEvent } from "../../contracts/events"
 import type { McpConnectorItem, McpListServersParams, McpListServersResponse } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
+import type { AuthState } from "../../contracts/auth"
 
 declare global {
   interface SelectedFolderInfo {
@@ -12,10 +13,15 @@ declare global {
   }
 
   interface DesktopBridge {
+    platform?: string
     minimizeWindow: () => void
     maximizeWindow: () => void
     closeWindow: () => void
     selectFolder: () => Promise<SelectedFolderInfo | null>
+    getAuthState: () => Promise<AuthState>
+    login: (username: string, password: string) => Promise<AuthState>
+    logout: () => Promise<{ remoteLogoutSucceeded: boolean }>
+    subscribeAuthState: (listener: (state: AuthState) => void) => () => void
     listMcpServers: (params?: McpListServersParams) => Promise<McpListServersResponse>
     getMcpServerVersion: (serverName: string, version?: string) => Promise<McpConnectorItem>
     listLspServers: () => Promise<LspServerStatus[]>

@@ -13,11 +13,6 @@ export interface ChatSession {
   projectOrder: number
 }
 
-export interface DemoAccount {
-  password: string
-  projects: string[]
-}
-
 export const PROJECT_CATALOG: ProjectItem[] = [
   {
     id: "desktop",
@@ -33,9 +28,9 @@ export const PROJECT_CATALOG: ProjectItem[] = [
   },
 ]
 
-export const DEMO_ACCOUNTS: Record<string, DemoAccount> = {
-  ntquynh8: { password: "123", projects: ["desktop", "core-banking"] },
-  ntquynh9: { password: "123", projects: [] },
+export const MOCK_ASSIGNED_PROJECTS: Record<string, string[]> = {
+  ntquynh8: ["desktop", "core-banking"],
+  ntquynh9: [],
 }
 
 export const INITIAL_SESSIONS: ChatSession[] = [

@@ -8,12 +8,11 @@ import type {
   EasyInputMessage,
   FunctionCallOutputItem,
 } from "./types"
-import { StreamingHttpClient, type UndiciFetch } from "../../infrastructure/http/http-client"
+import type { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 import type { Response as HttpResponse } from "undici-types"
 import { RESPONSES_LIMITS } from "./responses-limits"
 
-const RESPONSE_HEADERS_TIMEOUT_MS = 300_000
-const STREAM_IDLE_TIMEOUT_MS = 900_000
+const CHAT_STREAM_PATH = "api/v1/chat/responses"
 
 interface ResponsesStreamEvent {
   type: string
@@ -27,17 +26,10 @@ interface ResponsesStreamEvent {
 }
 
 export class ChatClient implements ChatModel {
-  private readonly http: StreamingHttpClient
-
   constructor(
     private readonly config: ChatClientConfig,
-    fetchImpl?: UndiciFetch,
-  ) {
-    this.http = new StreamingHttpClient(fetchImpl, {
-      responseHeadersTimeoutMs: RESPONSE_HEADERS_TIMEOUT_MS,
-      streamIdleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
-    })
-  }
+    private readonly http: BackendHttpClient,
+  ) {}
 
   async *stream(
     request: ResponsesRequest,
@@ -58,9 +50,9 @@ export class ChatClient implements ChatModel {
       }
 
       const response = await this.http.postSerialized(
-        this.config.endpoint,
+        CHAT_STREAM_PATH,
         serializedBody,
-        { Authorization: `Bearer ${this.config.accessToken}` },
+        {},
         controller.signal,
       )
 

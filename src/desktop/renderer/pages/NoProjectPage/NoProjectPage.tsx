@@ -62,7 +62,7 @@ export function NoProjectPage({ username, onSignOut, onThemeChangeToast }: NoPro
           <div className={styles.accessStep}>
             <span>1</span>
             <div>
-              <strong>Contact your IT Administrator</strong>
+              <strong>Contact AMS support</strong>
               <p>Ask them to verify your C-CodeX access and project membership.</p>
             </div>
           </div>
@@ -82,9 +82,11 @@ export function NoProjectPage({ username, onSignOut, onThemeChangeToast }: NoPro
           <div className={styles.accessActions}>
             <a
               className={styles.contactItButton}
-              href={`mailto:${APP_CONFIG.IT_HELPDESK_EMAIL}?subject=C-CodeX%20project%20access`}
+              href={APP_CONFIG.AMS_SUPPORT_URL}
+              target="_blank"
+              rel="noreferrer"
             >
-              Contact IT Administrator
+              Contact AMS support
             </a>
             <button className={styles.signoutLink} type="button" onClick={onSignOut}>
               Sign out

@@ -10,6 +10,7 @@ export const APP_CONFIG = {
   TERMS_VERSION: "v1.0.0",
   PRIVACY_VERSION: "v1.0.0",
   TOAST_DURATION_MS: 2600,
+  AMS_SUPPORT_URL: "https://c-ticket.cmcglobal.vn",
   IT_HELPDESK_EMAIL: "it-helpdesk@cmcglobal.com.vn",
   SUPPORT_EMAIL: "support@ccodex.com",
 } as const

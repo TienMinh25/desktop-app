@@ -1,6 +1,6 @@
 # Desktop Coding Harness
 
-An Electron desktop coding assistant backed by a local harness process. The desktop UI talks to the harness over a local process boundary. The backend integration uses the company's shared OpenAI Responses API-compatible endpoint and an app-issued access token in the `Authorization: Bearer <access_token>` header. Login and token handling have not been implemented yet.
+An Electron desktop coding assistant backed by a local harness process. The desktop UI talks to the harness over a local process boundary. The backend integration uses `BACKEND_HOST` and app-issued access tokens in the `Authorization: Bearer <access_token>` header. Electron main owns login and token handling.
 
 The project uses one repository, one root `package.json`, and Bun. The harness is a separate runtime process, but it is not a separate package or workspace.
 
@@ -16,7 +16,9 @@ Harness process
     └── company domain client ──→ company backend
 ```
 
-The Electron main process owns desktop lifecycle and starts/stops the harness process. It forwards commands and events between the renderer and harness. The harness does not import Electron or UI code. Chat requests go from the harness to the company's shared Responses API-compatible endpoint using a Bearer access token; streamed response events travel back through the harness to the UI. There is no static API key in the intended app/backend contract.
+The Electron main process owns desktop lifecycle and starts/stops the harness process. It forwards commands and events between the renderer and harness. The harness does not import Electron or UI code. Chat requests go from the harness to `POST /api/v1/chat/responses` using a Bearer access token; streamed response events travel back through the harness to the UI. There is no static API key in the intended app/backend contract.
+
+Application environment variables are parsed by `validate()` in `src/infrastructure/config/environment.ts`. Main and harness each validate once at startup and inject the typed config into their clients and services. Host environment values such as `PATH` and `HOME` are still read where child processes need to inherit them.
 
 ## Folder Structure
 
@@ -36,11 +38,10 @@ src/
     lsp/               # App-configured language-server stdio client
     mcp/               # Configurable MCP stdio client and tool adapter
   infrastructure/
-    http/               # Shared HTTP transport clients (JSON and streaming)
+    http/               # PublicHttpClient and authenticated BackendHttpClient
   harness-server/
     index.ts           # Separate-process entrypoint; starts the harness runtime
   domain/
-    auth/               # (planned) Login and credential handling for the company backend
     chat/               # OpenAI Responses compatible client and streaming
   contracts/
     commands.ts         # Commands exchanged between desktop and harness
@@ -57,7 +58,7 @@ Folders describe responsibilities; they are not separately published or installe
 - `desktop/main` manages windows and harness process lifecycle, and transports validated commands/events. It contains no agent loop or tool policy.
 - `harness-server` is a process entrypoint and composition root. It starts the runtime and connects its transport.
 - `harness` owns sessions, agent execution, tools, permissions, and harness events. It does not depend on Electron or UI.
-- `domain` will adapt company authentication and the shared chat API for use by the harness; authentication is planned and not implemented yet.
+- `desktop/main` owns company login and encrypted token storage. `BackendHttpClient` provides the authenticated backend boundary for JSON and streaming requests; `PublicHttpClient` serves public APIs such as MCP Registry.
 - `contracts` contains only shared message shapes and types; it contains no runtime behavior.
 
 ## Command and Event Flow
@@ -74,18 +75,18 @@ Do not require users to install Docker. Start with workspace-scoped file access,
 
 ## Learning and Build Order
 
-Follow the course outline, keeping the desktop-specific setup and IPC boundary early: Electron/Bun/TypeScript foundations → typed IPC and separate harness process → model streaming and agent/tool loop → permissions and host execution → context engineering → subagents → remote/headless entrypoint → evals → trace recording/replay. Keep auth and durable database work at the point their product contracts are ready; the user will provide the database schema and auth requirements. The detailed status and agreed decisions are in the handoff section below. Keep the harness independent of Electron so another transport can be added without moving harness logic into the UI.
+Follow the course outline, keeping the desktop-specific setup and IPC boundary early: Electron/Bun/TypeScript foundations → typed IPC and separate harness process → model streaming and agent/tool loop → permissions and host execution → context engineering → subagents → remote/headless entrypoint → evals → trace recording/replay. Authentication is integrated; defer durable database work until the user provides the schema. The detailed status and agreed decisions are in the handoff section below. Keep the harness independent of Electron so another transport can be added without moving harness logic into the UI.
 
 ## Running the chat + agent-loop slice
 
-The local harness process inherits its environment from Electron. For the current unauthenticated prototype, configure the chat endpoint before starting the app:
+The local harness process inherits its environment from Electron. Configure the backend origin before starting the app:
 
 ```sh
-RESPONSES_API_URL="https://your-company.example/v1/responses" \
+BACKEND_HOST="https://your-company.example" \
 bun run dev
 ```
 
-`RESPONSES_API_URL` is the full Responses API endpoint. For compatibility, the deprecated `CHAT_COMPLETIONS_URL` setting is accepted and its trailing `/chat/completions` path is changed to `/responses`. The harness sends `Authorization: Bearer <access_token>` using `CHAT_ACCESS_TOKEN`; until the auth integration contract is supplied, it falls back to the placeholder `YOUR_JWT_ACCESS_TOKEN`. Replace the placeholder with the app-issued JWT flow when login/token handling is implemented. Never put credentials in renderer code or commit real values. The app currently uses the selected model name from the prompt bar. Global skills are discovered only under `~/.ccodex/skills/<name>/SKILL.md`; the app creates `~/.ccodex` at startup and creates `skills/` when the skill tool is used. MCP stdio servers can be configured with `MCP_SERVERS` as a JSON array of `{ "name", "command", "args", "env", "cwd" }` entries; each discovered MCP tool call requires approval. Manage language servers in **Customize → Language Servers**: the app detects installed executables, supports Go, TypeScript/JavaScript, Python, and Rust profiles plus custom servers, and stores preferences in app user data. It never installs servers automatically. The `lsp` tool supports definition, references, hover, and diagnostics over stdio, reads files up to 1 MB, and requires approval per query. Ordered permission overrides can be configured in `HARNESS_PERMISSION_RULES` as a JSON array, for example `[{"tool":"shell","pattern":"git status*","decision":"allow"}]`.
+`BACKEND_HOST` is the backend origin. Chat streams use `/api/v1/chat/responses` on that host and send the app-managed access token; the encrypted session lives at `~/.ccodex/auth-session.bin` and is refreshed once after a protected request returns `401`; Electron `safeStorage` encrypts the file contents using OS secure storage. MCP Registry requests remain public. Never put credentials in renderer code or commit real values. The app currently uses the selected model name from the prompt bar. Global skills are discovered only under `~/.ccodex/skills/<name>/SKILL.md`; the app creates `~/.ccodex` at startup and creates `skills/` when the skill tool is used. MCP stdio servers can be configured with `MCP_SERVERS` as a JSON array of `{ "name", "command", "args", "env", "cwd" }` entries; each discovered MCP tool call requires approval. Manage language servers in **Customize → Language Servers**: the app detects installed executables, supports Go, TypeScript/JavaScript, Python, and Rust profiles plus custom servers, and stores preferences in app user data. It never installs servers automatically. The `lsp` tool supports definition, references, hover, and diagnostics over stdio, reads files up to 1 MB, and requires approval per query. Ordered permission overrides can be configured in `HARNESS_PERMISSION_RULES` as a JSON array, for example `[{"tool":"shell","pattern":"git status*","decision":"allow"}]`.
 
 Workspace selection is optional; without a picked folder the harness uses the current user's home directory as its execution root. The prompt bar offers **Ask every time** (default), **Auto-approve safe operations**, and **Full access**. These user approval modes are separate from the internal `allow` / `ask` / `deny` policy; explicit deny rules always block. The harness registers file, search, shell, patch, web fetch, LSP, skill, todo, and configured MCP tools. The loop sends each tool result back to the model and continues until the model returns a normal answer without tool calls. There is currently no fixed tool-round limit or prompt-cancellation command. IPC commands are validated at runtime with Zod schemas.
 
@@ -98,7 +99,7 @@ Conversation history is behind a `ConversationStore` interface with a process-me
 - `src/desktop/preload/index.ts` exposes only `sendHarnessCommand` and `subscribeHarnessEvents` to React. The renderer never receives `ipcRenderer` itself.
 - `src/desktop/main/index.ts` owns the Electron utility process and forwards commands/events. It does not implement the agent loop.
 - `src/harness-server/index.ts` is the separate-process composition/transport entrypoint; [`src/harness/runtime.ts`](src/harness/runtime.ts) owns headless prompt/session orchestration.
-- `src/domain/chat/chat-client.ts` converts streamed server-sent event chunks into text and tool-call deltas. `src/infrastructure/http/http-client.ts` provides separate JSON and streaming HTTP transports, both using Undici; the streaming transport has a 5-minute response-header timeout and a 15-minute idle timeout between body chunks.
+- `src/domain/chat/chat-client.ts` converts streamed server-sent event chunks into text and tool-call deltas. `BackendHttpClient` handles backend JSON and streaming requests; its stream transport has a 5-minute response-header timeout and a 15-minute idle timeout between body chunks. `PublicHttpClient` handles unauthenticated public API requests such as MCP Registry.
 - `src/harness/agent/agent-loop.ts` collects tool-call fragments, invokes registered tools, appends their results to the conversation, and asks the model for the next turn.
 - `src/harness/tools/` contains the registered tool implementations; policy marks outside reads and risky operations as `ask`, then the selected approval mode decides whether to show the prompt or auto-approve it.
 - [`docs/harness-design.md`](docs/harness-design.md) explains permission decisions, the Electron utility-process messaging API, memory storage boundary, limitations, and a guided reading order.
@@ -109,7 +110,7 @@ Use this section as the current project brief. The project owner wants step-by-s
 
 ### Target and course position
 
-The target is a desktop coding harness with a separate headless harness process, a real agent loop, tools, explicit permissions, MCP and skills, and later company authentication and persistent conversation storage. Most of the basic harness and tool work is in place. Course Lesson 3's OS sandboxing was explicitly deferred: the app currently runs tools on the host and the user chose this to keep macOS/Windows support simple. The next course step is Lesson 4, context engineering. Continue there while being clear that app permissions are not OS isolation.
+The target is a desktop coding harness with a separate headless harness process, a real agent loop, tools, explicit permissions, MCP and skills, company authentication, and persistent conversation storage. Auth integration is in place; durable conversation storage remains pending the database schema. Course Lesson 3's OS sandboxing was explicitly deferred: the app currently runs tools on the host and the user chose this to keep macOS/Windows support simple. The next course step is Lesson 4, context engineering. Continue there while being clear that app permissions are not OS isolation.
 
 ### Implemented in source
 
@@ -128,14 +129,14 @@ The target is a desktop coding harness with a separate headless harness process,
 - **Filesystem/tools:** allow approved reads outside workspace; use descriptor validation for reads; writes can create parent directories. Keep `read`, `write`, `edit`, `bash`, `apply_patch`; use ripgrep for glob/grep. Bash limits are 120 sec / 50 KB. Webfetch limits are 5 MiB download / 50 KiB returned text.
 - **IPC/schema:** use Zod at runtime boundaries, shared constants for discriminants, base event interfaces, and exhaustive `assertNever` handlers. Keep permission/question response IPC channels; main owns the command `type` and validates the complete command.
 - **MCP/LSP:** use a library for MCP, currently official TypeScript SDK over stdio. LSP profiles are managed in Customize; the app detects user-installed executables and supports definition, references, hover, and diagnostics.
-- **Backend chat/auth:** the intended backend is one company API with an OpenAI Responses API-compatible schema; requests use an app-issued access token in `Authorization: Bearer <access_token>`. Login/token acquisition and refresh come later. No static API key is part of the product contract. Current prototype uses `CHAT_ACCESS_TOKEN` with a placeholder default until auth is implemented. The user supplies the company URL when doing real end-to-end chat checks.
+- **Backend chat/auth:** the backend serves chat at `/api/v1/chat/responses` on `BACKEND_HOST`. Requests use an app-issued access token in `Authorization: Bearer <access_token>`; login, refresh, and logout are handled by the app. No static API key or separate chat endpoint setting is used. Chat request and stream parsing currently follow the Responses-compatible wire format.
 - **Database:** the user will provide the DB schema. Do not invent conversation/message persistence schema yet; preserve `ConversationStore` as the seam. Current harness conversation history is memory-only, and renderer sidebar session data is mock/local UI state rather than durable harness storage.
 - **Build/release:** packaging/build target and release design are for the user to decide. Updates will use a private update server for the internal app, not public GitHub Releases. Do not start a packaging/release implementation before the user chooses specifics.
 
 ### Not done / known gaps
 
 - Course Lesson 4 remains: context assembly/management, useful memory design, context-window budgeting and compaction. Skill support is basic (`SKILL.md` only); LSP feedback is basic. Follow the course in small explainable steps and use OpenCode as a reference rather than copying unrelated architecture wholesale.
-- No login, access-token lifecycle, secure credential storage, or auth integration. Chat endpoint exists, but real company-authenticated E2E is pending the user-provided URL and auth flow.
+- Login, encrypted local token storage, refresh, and logout are implemented. Real company-backend end-to-end checks still need a configured `BACKEND_HOST` and test account.
 - No DB schema or durable chat/session history. No harness commands to create/list/rename/delete sessions or return a snapshot on renderer reconnect. Current sidebar is mock state.
 - Prompt cancellation/interrupt is not implemented end-to-end, despite the HTTP client using `AbortController` internally. Model request has a 30-second response-header timeout and a 120-second no-stream-chunk timeout, with no total generation deadline.
 - Lesson 3 host execution has no OS sandbox. Filesystem mutations still have parent-path TOCTOU limitations; app permission prompts are not a security boundary against arbitrary host process behavior.
@@ -143,14 +144,14 @@ The target is a desktop coding harness with a separate headless harness process,
 - Skill supporting files/metadata are not loaded. Webfetch intentionally returns bounded text, not arbitrary binary/web-page rendering.
 - Packaging, signing, CI release artifacts, private update API integration, and actual updater are not implemented. UI update controls are currently mock UI.
 - A dependency advisory review is documented in `docs/harness-design.md` as performed on 2026-11-06. It is a point-in-time result, not a guarantee of zero future CVEs; repeat a full dependency/Electron advisory check after dependency changes and before release.
-- Latest `src/desktop/main/index.ts` TODO cleanup and README/design doc edits have not had typecheck or tests run yet. Run `bun run typecheck`, relevant `bun test` suites, `bun run build`, and `git diff --check` before claiming the latest changes verified.
+- `bun run typecheck` currently reports test code targeting older chat/agent APIs; the current auth changes have not had their test suite run. Update those tests before using typecheck as a clean project-wide gate.
 
 ### Suggested next work
 
 1. Start Lesson 4 with context engineering: trace what history/tool outputs are sent on each model request, identify token/context growth, and explain the current behavior before changing it. Keep durable memory and DB schema out until the user supplies the storage contract.
 2. Add focused context budgeting/compaction design and implementation in small course-aligned increments; preserve tool-call/result pairing and do not drop active-turn state.
 3. Then cover skill/LSP context contributions and define what should be retained or summarized. Reconcile details with the owner before inventing memory persistence semantics.
-4. Later, when the user provides contracts, implement auth/access-token flow and the shared chat API header; later still, integrate their DB schema behind `ConversationStore`.
+4. When the backend project-list contract is available, replace mock assignments through `BackendHttpClient`; later, integrate the user's DB schema behind `ConversationStore`.
 5. Before broader release work, resolve cancellation, security boundary gaps, run CVE scans, and wait for the owner to decide packaging/update details.
 
 For immediate orientation in a new session, inspect the working tree first (it contains staged, unstaged, and untracked work), then read this handoff, `docs/harness-design.md`, and the Lesson 4 course material. Avoid resetting or cleaning the working tree: the existing changes are intentional project work.
