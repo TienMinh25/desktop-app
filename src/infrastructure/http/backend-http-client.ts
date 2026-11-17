@@ -70,7 +70,8 @@ export class BackendHttpClient {
   }
 
   close(): Promise<void> {
-    return this.dispatcher.close()
+    const close = (this.dispatcher as unknown as { close?: () => Promise<void> }).close
+    return close ? close.call(this.dispatcher) : Promise.resolve()
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {

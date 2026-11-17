@@ -15,6 +15,10 @@ class TrackingEnvironment extends LocalExecutionEnvironment {
   override close() { this.closed = true }
 }
 
+function functionCall(name: string, argumentsValue: unknown, callId: string): ChatStreamEvent {
+  return { type: "response.output-items", items: [{ type: "function_call", id: `fc_${callId}`, call_id: callId, name, arguments: JSON.stringify(argumentsValue) }] }
+}
+
 it("serializes prompts for the same session", async () => {
   let releaseFirst!: () => void
   const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
@@ -82,7 +86,7 @@ it("passes the selected approval mode from chat command through runtime to permi
   let completed!: () => void
   const finished = new Promise<void>((resolve) => { completed = resolve })
   const tool: HarnessTool = {
-    definition: { type: "function", function: { name: "write", description: "write", parameters: { type: "object" } } },
+    definition: { type: "function", name: "write", description: "write", parameters: { type: "object" } },
     async permissionRequests() { return [{ tool: "write", action: "write", resource: "file.txt", reason: "Write a file" }] },
     async execute() { return "written" },
   }
@@ -93,7 +97,7 @@ it("passes the selected approval mode from chat command through runtime to permi
     async *stream(): AsyncIterable<ChatStreamEvent> {
       modelTurn += 1
       if (modelTurn === 1) {
-        yield { type: "tool-call.delta", index: 0, id: "call-write", name: "write", argumentsDelta: "{}" }
+        yield functionCall("write", {}, "call-write")
         yield { type: "stream.finished" }
       } else {
         yield { type: "text.delta", text: "done" }
@@ -132,10 +136,10 @@ it("routes an inline question answer back into the model tool result", async () 
     async *stream(request): AsyncIterable<ChatStreamEvent> {
       modelTurn += 1
       if (modelTurn === 1) {
-        yield { type: "tool-call.delta", index: 0, id: "call-question", name: "question", argumentsDelta: JSON.stringify({ prompt: "Which IPC transport should I use?", choices: ["MessagePort", "UtilityProcess"] }) }
+        yield functionCall("question", { prompt: "Which IPC transport should I use?", choices: ["MessagePort", "UtilityProcess"] }, "call-question")
       } else {
-        const lastMessage = request.messages.at(-1)
-        if (lastMessage?.role === "tool" && typeof lastMessage.content === "string") answersSeenByModel.push(lastMessage.content)
+        const lastMessage = request.input.at(-1)
+        if (lastMessage?.type === "function_call_output" && typeof lastMessage.output === "string") answersSeenByModel.push(lastMessage.output)
         yield { type: "text.delta", text: "Got it" }
       }
       yield { type: "stream.finished" }

@@ -16,7 +16,8 @@ it("clones message arrays at the storage boundary", async () => {
   await store.saveMessages("session-a", messages)
   messages[0]!.content = "mutated outside store"
   const loaded = await store.getMessages("session-a")
-  loaded[0]!.content = "mutated after load"
+  const loadedUserMessage = loaded[0] as { content: string }
+  loadedUserMessage.content = "mutated after load"
 
   expect(await store.getMessages("session-a")).toEqual([{ role: "user", content: "original" }])
 })
