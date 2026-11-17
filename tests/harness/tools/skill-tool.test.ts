@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { globalSkillDirectory, skillTool } from "../../../src/harness/tools/skill-tool"
 import { createToolTestContext } from "./tool-test-context"
 
-it("lists and loads project skills from a known project skill directory", async () => {
+it("lists and loads global skills from the configured global skill directory", async () => {
   const testContext = await createToolTestContext()
   try {
     const skillName = `test-${crypto.randomUUID()}`

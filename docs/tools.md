@@ -17,7 +17,7 @@
 | `webfetch` | Tải nội dung từ URL HTTP/HTTPS dạng text, JSON hoặc XML. | Tải tối đa 5 MiB; trả tối đa 50 KiB; tối đa 10 redirect; timeout 30 giây. | Hỏi approval cho URL ban đầu và từng đích redirect theo mặc định. | URL không được chứa username/password; loại MIME không phải text/JSON/XML bị từ chối. Hiện chưa có chặn hostname/IP loopback, private hoặc link-local; approval redirect không tự bảo vệ khỏi SSRF ở tầng kết nối. |
 | `todowrite` | Tạo/cập nhật checklist cho prompt hiện tại hoặc goal đang chọn. Upsert theo `id`; thiếu `id` thì ghép theo nội dung; item bỏ khỏi payload vẫn giữ. | Tối đa 100 item/lần; nội dung item tối đa 2.000 ký tự. | Được phép theo policy mặc định. | Lưu trong memory của harness process, không ghi database. Xóa session sẽ xóa checklist của session. |
 | `question` | Hiển thị câu hỏi và chờ câu trả lời tự do; choices chỉ là gợi ý. | Câu hỏi tối đa 2.000 ký tự; tối đa 8 gợi ý, mỗi gợi ý tối đa 200 ký tự; UI giới hạn câu trả lời 10.000 ký tự và không gửi câu rỗng/whitespace; chờ tối đa 5 phút. | Không yêu cầu permission OS. | Trim câu hỏi và từ chối nội dung rỗng; câu trả lời giữ nguyên whitespace đầu/cuối. Hết hạn hoặc xóa session sẽ hủy lượt hỏi; không tự chọn một gợi ý thay người dùng. |
-| `skill` | `list` hoặc `load` skill từ `~/.ccodex/skills/<name>/SKILL.md`; nội dung load được thêm vào model context. | Tên thư mục theo `[A-Za-z0-9][A-Za-z0-9._-]*`; file skill đọc tối đa 100.000 byte. | Hỏi approval khi liệt kê hoặc nạp; nạp skill được đánh dấu nhạy cảm vì nội dung bên ngoài được đưa vào context. | Chỉ tìm global skills trong `~/.ccodex/skills`; không tự tìm skill trong repo/workspace. Từ chối symlink ở thư mục gốc và file không phải regular file. |
+| `skill` | `list` trả tên các skill global hợp lệ; `load` trả toàn bộ nội dung `SKILL.md` dạng UTF-8 để model nhận như tool output/context. Mỗi lần load đọc lại file, không cache. | Tên thư mục theo `[A-Za-z0-9][A-Za-z0-9._-]*`; `SKILL.md` tối đa 100.000 byte (file đúng 100.000 byte được chấp nhận). Nội dung phải là UTF-8 text và không có NUL byte. | Cả `list` và `load` đều đi qua permission preflight. Policy mặc định là `ask`; `load` được đánh dấu `sensitive`. `manual` hỏi người dùng; `auto-safe` cũng hỏi vì policy là `ask`; `full-access` tự cho qua trừ rule `deny`. | Chỉ dò `~/.ccodex/skills/<name>/SKILL.md`, sắp xếp tên trước khi trả. Tên sai định dạng, symlink ở root/skill directory/file, thư mục thiếu `SKILL.md`, file không regular hoặc file thoát khỏi root bị bỏ qua/từ chối. Tool tự tạo `~/.ccodex/skills` nếu chưa có. Không parse frontmatter, không tìm trong project hay thư mục chuẩn khác, không cài/xóa skill, không tự nạp supporting files và không chạy script. Model vẫn có thể dùng `read` để đọc tài nguyên theo đường dẫn hoặc gọi `shell` để chạy script được hướng dẫn trong skill; đó là tool call riêng với permission của tool tương ứng, shell chạy trên host và không có OS sandbox. Nội dung là instruction không tin cậy; approval chỉ cho phép đọc, không kiểm duyệt hay vô hiệu hóa prompt injection. |
 | `mcp_<server>_<tool>` | Tool động được khám phá từ MCP server local stdio khai báo trong `MCP_SERVERS`; schema/description lấy từ server và được giới hạn thành function tool. | Mỗi schema tối đa 50.000 byte, phải là object schema. Gọi tool timeout sau 30 giây; output text tối đa 30.000 ký tự. Input/result protocol khác tùy server. | Hỏi approval cho mỗi lần gọi theo mặc định. | Chỉ xuất hiện khi server cấu hình kết nối thành công; lỗi kết nối khiến setup MCP thất bại. Chỉ giữ content dạng text; nếu không có text trả JSON result bị giới hạn. Chưa hỗ trợ remote HTTP/OAuth. Tên tool có prefix server để tránh trùng; có thể chuẩn hóa ký tự và giới hạn 64 ký tự. |
 
 ## File do người dùng đính kèm và tham chiếu `@`
@@ -52,5 +52,38 @@ Chế độ approval của prompt và `HARNESS_PERMISSION_RULES` có thể thay 
 - Mỗi prompt có tool context và execution environment riêng; các vòng gọi model sau tool call nằm trong cùng AgentLoop.
 - `todowrite` ở scope request bị xóa khi prompt kết thúc; scope goal tiếp tục trong session cho tới khi xóa session.
 - Xóa session bỏ prompt chưa chạy, hủy câu hỏi đang chờ và dọn checklist; prompt đang chạy được phép kết thúc trước khi dọn agent.
+
+## Review capability: `skill`
+
+Phần này ghi lại hành vi đã xác nhận trong `src/harness/tools/skill-tool.ts` và các giới hạn hiện tại để làm cơ sở chốt phạm vi tiếp theo. Đây chưa phải cam kết sẽ triển khai các mục bên dưới.
+
+### Đã có
+
+- Nguồn duy nhất là `~/.ccodex/skills`; mỗi skill là một thư mục con có `SKILL.md` trực tiếp.
+- Model có thể liệt kê tên rồi nạp một skill theo tên. Tool chỉ trả nội dung hướng dẫn; skill không được thực thi như code.
+- Danh sách bỏ qua entry sai tên, symlink, thư mục thiếu `SKILL.md`, file không regular và file có canonical path nằm ngoài root. Nội dung được đọc qua execution environment với giới hạn byte và kiểm tra UTF-8/binary.
+- Cả liệt kê và nạp được gate bằng permission policy. Nội dung khi nạp được đánh dấu nhạy cảm để UI giải thích rằng instruction bên ngoài sẽ vào model context.
+
+### Chưa có / cần quyết định
+
+| Câu hỏi | Hiện trạng | Quyết định cần chốt |
+| --- | --- | --- |
+| Phạm vi discovery | Global `~/.ccodex/skills` duy nhất; không tìm skill trong repo/workspace, `.agents/skills`, `.codex/skills` hay các thư mục khác. | Giữ global-only hay thêm project/workspace scope? Nếu thêm, cần quy tắc ưu tiên, tránh trùng tên và cách hiện nguồn/độ tin cậy cho người dùng. |
+| Metadata và discovery cho model | `list` chỉ trả tên; tool schema không có `description` theo từng skill. | Model có cần xem mô tả ngắn/frontmatter trước khi chọn load để giảm lượt gọi và tránh nạp nhầm không? Nếu có, chốt format metadata và validation. |
+| Tài nguyên phụ và scripts | `skill` không đọc file phụ. Model có thể gọi `read` với path cụ thể để nạp tài liệu, hoặc `shell` để chạy script theo hướng dẫn; các tool đó có permission riêng. | Cách dùng `read`/`shell` hiện tại có đủ không, hay cần skill-aware resource/script API để giảm việc model tự ghép path? Nếu cần, chốt tổng size budget, containment, quyền theo từng file và UX approval; không chạy script ngầm bên trong `skill.load`. |
+| Quản lý cài đặt | Người dùng tự đặt file vào thư mục; tool không tạo, cập nhật hoặc xóa skill (ngoại trừ tạo root directory rỗng khi được gọi). | Giữ quản lý thủ công hay cần UI/import/install và nguồn tin cậy/versioning? Đây là capability riêng, không nên ngầm gắn với `load`. |
+| Vòng đời trong phiên | Load lại file mỗi lần gọi; không có danh sách skill đã nạp, unload, pin theo session hay kiểm tra file thay đổi giữa các lượt. | Có cần quản lý skill theo session, trạng thái loaded, hoặc refresh/unload không? |
+| Trust và permission UX | Approval áp dụng cho thao tác list/load theo policy; nội dung được đưa nguyên dạng vào context. Không có sandbox, chữ ký hay scanner. | Có cần preview nội dung trước khi load, provenance/trust indicator hoặc allowlist nguồn không? Approval hiện tại chỉ xác nhận quyền đọc, không bảo đảm nội dung an toàn. |
+| Gating load và containment lúc đọc | `permissionRequests` kiểm tra format tên và tạo resource path, xin approval trước `prepare`; `prepare` mới xác nhận skill tồn tại/canonical path. Discovery kiểm tra canonical path nằm trong root, nhưng `readTextFile` chỉ xác minh identity của file đang mở, không xác minh lại containment với skill root. Nếu thư mục skill bị thay bằng symlink sau discovery, có race hiếm có thể trỏ lần đọc sang path ngoài root. | Nên resolve skill metadata trước approval để không hỏi quyền cho skill không tồn tại; vẫn không đọc nội dung trước approval. Đồng thời cân nhắc API đọc có root constraint để kiểm tra containment ngay tại thời điểm open, tránh parent-directory swap. |
+| Regression coverage | Có test list/load thành công và lỗi operation/name không hợp lệ hoặc skill vắng mặt. Chưa thấy test riêng cho giới hạn 100.000 byte, UTF-8/NUL, symlink root/file, bỏ qua skill thiếu file, approval theo mode, hoặc thay directory path giữa discovery và open. | Chốt các invariant bảo mật/lifecycle nào cần test trước khi mở rộng behavior; riêng root containment nên có test directory-swap chống TOCTOU. |
+
+### Các phương án triển khai sau khi chốt
+
+1. **Giữ gọn như hiện tại:** global-only, `SKILL.md` độc lập, bổ sung test cho invariants còn thiếu và giữ docs đồng bộ.
+2. **Discovery tốt hơn:** thêm metadata có kiểm tra và trả tên + mô tả; chưa đổi nguồn cài đặt hoặc cách đọc tài nguyên.
+3. **Skills theo project:** thêm scope project với quy tắc trust/ưu tiên/trùng tên và permission theo nguồn trước khi đọc.
+4. **Skill resources/management:** thiết kế thành capability riêng cho tài nguyên phụ hoặc install/update, kèm containment, size budget và provenance.
+
+Thứ tự phụ thuộc: chốt nguồn/scope trước metadata discovery; chốt tài nguyên phụ trước khi tăng context budget; chốt trust model trước khi thêm install hoặc nguồn project.
 
 Tham khảo API: [File inputs](https://developers.openai.com/api/docs/guides/file-inputs) · [Images and vision](https://developers.openai.com/api/docs/guides/images-vision) · [Function calling](https://developers.openai.com/api/docs/guides/function-calling).

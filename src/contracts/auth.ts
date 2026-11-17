@@ -12,8 +12,8 @@ export const AuthTokenPairSchema = z.object({
 
 export const AuthSuccessEnvelopeSchema = z.object({
   data: AuthTokenPairSchema,
-  metadata: z.object({ code: z.literal("0000") }).passthrough(),
-}).passthrough()
+  metadata: z.object({ code: z.literal("0000") }).loose(),
+}).loose()
 
 export const AuthStateSchema = z.object({
   authenticated: z.boolean(),
@@ -21,15 +21,15 @@ export const AuthStateSchema = z.object({
 }).strict()
 
 export const AuthRpcRequestSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("auth.rpc.get-access-token"), requestId: z.string().uuid() }).strict(),
-  z.object({ type: z.literal("auth.rpc.refresh"), requestId: z.string().uuid() }).strict(),
-  z.object({ type: z.literal("auth.rpc.expire-session"), requestId: z.string().uuid() }).strict(),
+  z.object({ type: z.literal("auth.rpc.get-access-token"), requestId: z.uuid() }).strict(),
+  z.object({ type: z.literal("auth.rpc.refresh"), requestId: z.uuid() }).strict(),
+  z.object({ type: z.literal("auth.rpc.expire-session"), requestId: z.uuid() }).strict(),
 ])
 
 export const AuthRpcResponseSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("auth.rpc.access-token"), requestId: z.string().uuid(), accessToken: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("auth.rpc.result"), requestId: z.string().uuid() }).strict(),
-  z.object({ type: z.literal("auth.rpc.error"), requestId: z.string().uuid(), code: z.enum(["unauthenticated", "request-failed"]), message: z.string().max(2_000) }).strict(),
+  z.object({ type: z.literal("auth.rpc.access-token"), requestId: z.uuid(), accessToken: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("auth.rpc.result"), requestId: z.uuid() }).strict(),
+  z.object({ type: z.literal("auth.rpc.error"), requestId: z.uuid(), code: z.enum(["unauthenticated", "request-failed"]), message: z.string().max(2_000) }).strict(),
 ])
 
 export type AuthCredentials = z.infer<typeof AuthCredentialsSchema>
