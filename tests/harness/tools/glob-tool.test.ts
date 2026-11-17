@@ -15,21 +15,31 @@ it("lists only workspace-relative paths matching the requested pattern", async (
   } finally { await testContext.cleanup() }
 })
 
-it("includes non-empty matching directories as well as files", async () => {
+it("lists files only and omits directories", async () => {
   const testContext = await createToolTestContext()
   try {
     await mkdir(join(testContext.context.workspacePath, "src", "nested"), { recursive: true })
     await writeFile(join(testContext.context.workspacePath, "src", "nested", "main.ts"), "export {}")
     const result = await globTool.execute({ pattern: "**/*" }, testContext.context)
-    expect(result).toContain("src\n")
-    expect(result).toContain("src/nested")
+    expect(result).not.toContain("src\n")
+    expect(result).not.toContain("src/nested\n")
     expect(result).toContain("src/nested/main.ts")
   } finally { await testContext.cleanup() }
 })
 
-it("rejects malformed glob patterns during preparation", async () => {
+it("supports ripgrep brace glob syntax", async () => {
+  const testContext = await createToolTestContext()
+  try {
+    await writeFile(join(testContext.context.workspacePath, "main.ts"), "export {}")
+    await writeFile(join(testContext.context.workspacePath, "main.tsx"), "export {}")
+    expect(await globTool.execute({ pattern: "*.{ts,tsx}" }, testContext.context)).toContain("main.tsx")
+  } finally { await testContext.cleanup() }
+})
+
+it("rejects traversal glob patterns during preparation", async () => {
   const testContext = await createToolTestContext()
   try {
     await expect(globTool.prepare!({ pattern: "../outside" }, testContext.context)).rejects.toThrow("stay inside")
+    await expect(globTool.prepare!({ pattern: "a".repeat(1_001) }, testContext.context)).rejects.toThrow("1,000 characters")
   } finally { await testContext.cleanup() }
 })

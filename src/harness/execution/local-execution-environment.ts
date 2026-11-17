@@ -4,13 +4,10 @@ import { constants } from "node:fs"
 import type { Stats } from "node:fs"
 import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { rgPath } from "@vscode/ripgrep"
-import type { CommandResult, ExecutionEnvironment, FileListResult, ResolvedPath, TextFilePage, TextSearchResult, WorkspaceFile } from "./execution-environment"
+import type { CommandResult, ExecutionEnvironment, FileListResult, ResolvedPath, TextFilePage, TextSearchResult } from "./execution-environment"
 import { resolveShellInvocation } from "./shell-selector"
-import { globToRegExp } from "./path-pattern"
 import { READ_LIMITS } from "./read-limits"
-
-const EXCLUDED_GLOBS = ["--glob", "!.git/**", "--glob", "!node_modules/**", "--glob", "!dist/**", "--glob", "!out/**"]
+import { RipgrepRunner } from "./ripgrep-runner"
 
 interface ActiveShellProcess {
   child: ChildProcess
@@ -24,6 +21,7 @@ interface ActiveShellProcess {
 export class LocalExecutionEnvironment implements ExecutionEnvironment {
   private environmentClosed = false
   private readonly activeProcesses = new Map<ChildProcess, ActiveShellProcess>()
+  private readonly ripgrep = new RipgrepRunner()
 
   constructor(readonly workspacePath: string) {}
 
@@ -189,49 +187,13 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
   }
 
   async listFiles(pattern: string, maxFiles = 20_000): Promise<FileListResult> {
-    const matcher = globToRegExp(pattern)
     const workspace = await realpath(this.workspacePath)
-    const output = await runRipgrep(["--files", "--hidden", "--no-config", "--no-ignore", "--glob", pattern, ...EXCLUDED_GLOBS], workspace, 4_000_000, 15_000)
-    if (output.exitCode !== 0 && output.exitCode !== 1) throw new Error(output.stderr || `ripgrep exited ${output.exitCode}`)
-    const paths = output.stdout.split(/\r?\n/).filter(Boolean)
-    const matches = new Map<string, WorkspaceFile>()
-    for (const relativePath of paths) {
-      const normalizedPath = relativePath.replaceAll("\\", "/")
-      matches.set(normalizedPath, { absolutePath: join(workspace, relativePath), relativePath: normalizedPath })
-      const segments = normalizedPath.split("/")
-      for (let index = 1; index < segments.length; index += 1) {
-        const directoryPath = segments.slice(0, index).join("/")
-        if (matcher.test(directoryPath)) matches.set(directoryPath, { absolutePath: join(workspace, ...segments.slice(0, index)), relativePath: directoryPath })
-      }
-    }
-    const allMatches = [...matches.values()].filter((entry) => matcher.test(entry.relativePath)).sort((left, right) => left.relativePath.localeCompare(right.relativePath))
-    const truncated = output.truncated || allMatches.length > maxFiles
-    return { files: allMatches.slice(0, maxFiles), visitedEntries: paths.length, truncated }
+    return await this.ripgrep.listFiles(workspace, pattern, maxFiles)
   }
 
-  async searchText(pattern: string, glob: string, maxResults = 500): Promise<TextSearchResult> {
+  async searchText(pattern: string, glob: string, maxResults = 500, caseSensitive = false, candidatePaths?: string[]): Promise<TextSearchResult> {
     const workspace = await realpath(this.workspacePath)
-    const output = await runRipgrep([
-      "--json", "--hidden", "--no-config", "--no-ignore", "--max-filesize", "1M",
-      "--glob", glob, ...EXCLUDED_GLOBS, "--", pattern, ".",
-    ], workspace, 20_000_000, 15_000)
-    if (output.exitCode !== 0 && output.exitCode !== 1) throw new Error(output.stderr || `ripgrep exited ${output.exitCode}`)
-    const matches: string[] = []
-    let malformed = false
-    for (const line of output.stdout.split(/\r?\n/)) {
-      if (!line) continue
-      try {
-        const event = JSON.parse(line) as { type?: string; data?: { path?: { text?: string }; lines?: { text?: string }; line_number?: number } }
-        if (event.type !== "match" || !event.data) continue
-        const path = event.data.path?.text
-        const lineNumber = event.data.line_number
-        const text = event.data.lines?.text?.replace(/\r?\n$/, "")
-        if (path === undefined || lineNumber === undefined || text === undefined) continue
-        matches.push(`${path.replace(/^\.\//, "")}:${lineNumber}:${text}`)
-        if (matches.length >= maxResults) break
-      } catch { malformed = true; break }
-    }
-    return { matches, truncated: output.truncated || malformed || matches.length >= maxResults }
+    return await this.ripgrep.searchText(workspace, pattern, glob, maxResults, caseSensitive, candidatePaths)
   }
 
   async applyPatch(patch: string): Promise<string> {
@@ -414,23 +376,4 @@ function isWithin(root: string, target: string) {
 
 function normalizePatchPath(path: string) {
   return path.replace(/^[ab]\//, "").replaceAll("\\", "/")
-}
-
-function runRipgrep(args: string[], cwd: string, maxOutputBytes: number, timeoutMs: number): Promise<{ exitCode: number | null; stdout: string; stderr: string; truncated: boolean }> {
-  return new Promise((resolveResult, reject) => {
-    const child = spawn(rgPath, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), truncated = false, timedOut = false
-    const append = (current: Buffer, chunk: Buffer, limit: number) => Buffer.concat([current, chunk]).subarray(-limit)
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = append(stdout, chunk, maxOutputBytes)
-      if (stdout.length >= maxOutputBytes) { truncated = true; child.kill() }
-    })
-    child.stderr.on("data", (chunk: Buffer) => { stderr = append(stderr, chunk, 8_000) })
-    const timer = setTimeout(() => { timedOut = true; truncated = true; child.kill() }, timeoutMs)
-    child.on("error", (error) => { clearTimeout(timer); reject(error) })
-    child.on("close", (exitCode) => {
-      clearTimeout(timer)
-      resolveResult({ exitCode, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8") || (timedOut ? "ripgrep timed out" : ""), truncated })
-    })
-  })
 }

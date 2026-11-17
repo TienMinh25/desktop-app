@@ -15,7 +15,7 @@ export interface FileListResult {
 }
 
 export interface TextSearchResult {
-  matches: string[]
+  matches: Array<{ path: string; line: number; text: string }>
   truncated: boolean
 }
 
@@ -46,7 +46,7 @@ export interface ExecutionEnvironment {
   readTextFilePage(path: string, expectedInsideWorkspace: boolean, offset: number, limit: number, columnOffset?: number): Promise<TextFilePage>
   writeTextFile(path: string, content: string): Promise<void>
   listFiles(pattern: string, maxFiles?: number): Promise<FileListResult>
-  searchText(pattern: string, glob: string, maxResults?: number): Promise<TextSearchResult>
+  searchText(pattern: string, glob: string, maxResults?: number, caseSensitive?: boolean, candidatePaths?: string[]): Promise<TextSearchResult>
   validatePatch(patch: string): string[]
   applyPatch(patch: string): Promise<string>
   runCommand(command: string, timeoutMs?: number): Promise<CommandResult>
