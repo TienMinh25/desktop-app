@@ -16,7 +16,6 @@ interface PromptBarProps {
   onPromptChange: (value: string) => void
   onSendPrompt: (model: string, effort: ReasoningEffort, 
   approvalMode: ApprovalMode) => void
-  isBusy: boolean
   onWorkspacePathChange: (path: string | null) => void
 }
 
@@ -69,7 +68,6 @@ export function PromptBar({
   promptText,
   onPromptChange,
   onSendPrompt,
-  isBusy,
   onWorkspacePathChange,
 }: PromptBarProps) {
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)
@@ -130,7 +128,7 @@ export function PromptBar({
   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      if (!isBusy) onSendPrompt(selectedModel, selectedEffort, approvalMode)
+      onSendPrompt(selectedModel, selectedEffort, approvalMode)
     }
   }
 
@@ -289,7 +287,6 @@ export function PromptBar({
                 type="button"
                 className={styles.sendButton}
                 onClick={() => onSendPrompt(selectedModel, selectedEffort, approvalMode)}
-                disabled={isBusy}
                 aria-label="Send prompt"
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">

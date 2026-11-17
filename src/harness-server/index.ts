@@ -14,7 +14,7 @@ import { LocalExecutionEnvironment } from "../harness/execution/local-execution-
 import { LspManager } from "../harness/lsp/lsp-manager"
 import { McpToolHost } from "../harness/mcp/mcp-tool-host"
 import { applyPatchTool } from "../harness/tools/apply-patch-tool"
-import { bashTool } from "../harness/tools/bash-tool"
+import { shellTool } from "../harness/tools/shell-tool"
 import { editTool } from "../harness/tools/edit-tool"
 import { globTool } from "../harness/tools/glob-tool"
 import { grepTool } from "../harness/tools/grep-tool"
@@ -32,8 +32,8 @@ if (!parentPort) throw new Error("Harness process must be started by Electron ut
 const permissionConfig = parsePermissionRules(process.env.HARNESS_PERMISSION_RULES)
 
 const tools = new ToolRegistry()
-const lspManager = new LspManager(process.env.LSP_SERVERS)
-for (const tool of [readTool, writeTool, editTool, globTool, grepTool, bashTool, applyPatchTool, createLspTool(lspManager), webfetchTool, todoWriteTool, skillTool, questionTool]) tools.register(tool)
+const lspManager = new LspManager()
+for (const tool of [readTool, writeTool, editTool, globTool, grepTool, shellTool, applyPatchTool, createLspTool(lspManager), webfetchTool, todoWriteTool, skillTool, questionTool]) tools.register(tool)
 const permissions = new PermissionManager((event) => parentPort.postMessage(event), permissionConfig.rules)
 const questions = new QuestionManager((event) => parentPort.postMessage(event))
 const mcpHost = new McpToolHost(process.env.MCP_SERVERS)
@@ -44,10 +44,11 @@ const runtime = new HarnessRuntime({
   tools,
   permissions,
   askUser(question) { return questions.ask(question) },
-  // Creates the ChatModel adapter for the selected model using the configured company endpoint.
+  cancelQuestionsForSession(sessionId) { questions.cancelSession(sessionId) },
+  // Creates the Responses API adapter for the selected model using the configured company endpoint.
   createChatModel(modelName) {
-    const endpoint = API_CONFIG.CHAT_COMPLETIONS_URL
-    if (!endpoint) throw new Error("CHAT_COMPLETIONS_URL is not configured")
+    const endpoint = API_CONFIG.RESPONSES_API_URL
+    if (!endpoint) throw new Error("RESPONSES_API_URL is not configured")
     return new ChatClient({ endpoint, model: modelName, accessToken: API_CONFIG.CHAT_ACCESS_TOKEN })
   },
   createExecutionEnvironment(workspacePath) { return new LocalExecutionEnvironment(workspacePath) },
@@ -76,6 +77,12 @@ parentPort.on("message", (messageEvent) => {
       return
     case HARNESS_COMMAND_TYPES.CHAT_SUBMIT:
       runtime.submit(command)
+      return
+    case HARNESS_COMMAND_TYPES.SESSION_DELETE:
+      runtime.deleteSession(command)
+      return
+    case HARNESS_COMMAND_TYPES.LSP_CONFIGURE:
+      lspManager.setConfiguration(command.servers)
       return
     default:
       return assertNever(command)

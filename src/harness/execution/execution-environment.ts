@@ -25,6 +25,7 @@ export interface TextFilePage {
   endLine: number
   totalLines?: number
   nextOffset?: number
+  nextColumnOffset?: number
 }
 
 export interface CommandResult {
@@ -40,8 +41,9 @@ export interface CommandResult {
 export interface ExecutionEnvironment {
   readonly workspacePath: string
   resolvePath(input: string, allowMissing?: boolean): Promise<ResolvedPath>
+  readFileBytes(path: string, maxBytes: number, expectedInsideWorkspace: boolean): Promise<Uint8Array>
   readTextFile(path: string, maxBytes: number, expectedInsideWorkspace: boolean): Promise<string>
-  readTextFilePage(path: string, expectedInsideWorkspace: boolean, offset: number, limit: number): Promise<TextFilePage>
+  readTextFilePage(path: string, expectedInsideWorkspace: boolean, offset: number, limit: number, columnOffset?: number): Promise<TextFilePage>
   writeTextFile(path: string, content: string): Promise<void>
   listFiles(pattern: string, maxFiles?: number): Promise<FileListResult>
   searchText(pattern: string, glob: string, maxResults?: number): Promise<TextSearchResult>

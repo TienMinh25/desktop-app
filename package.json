@@ -21,9 +21,9 @@
   "scripts": {
     "postinstall": "install-electron",
     "dev": "electron-vite dev --entry ./out/main/index.js",
-    "build": "electron-vite build",
-    "build:win": "electron-vite build && node --use-system-ca ./node_modules/electron-builder/cli.js --win",
-    "build:mac": "electron-vite build && node --use-system-ca ./node_modules/electron-builder/cli.js --mac",
+    "build": "electron-vite build && bun ./generate-app-icons.ts",
+    "build:win": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --win",
+    "build:mac": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --mac",
     "preview": "electron-vite preview",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

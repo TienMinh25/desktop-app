@@ -6,8 +6,8 @@ it("uses no custom permission rules when no configuration was provided", () => {
 })
 
 it("preserves a validated ordered rule list", () => {
-  expect(parsePermissionRules('[{"tool":"bash","pattern":"git status*","decision":"allow"}]')).toEqual({
-    rules: [{ tool: "bash", pattern: "git status*", decision: "allow" }],
+  expect(parsePermissionRules('[{"tool":"shell","pattern":"git status*","decision":"allow"}]')).toEqual({
+    rules: [{ tool: "shell", pattern: "git status*", decision: "allow" }],
     error: null,
   })
 })

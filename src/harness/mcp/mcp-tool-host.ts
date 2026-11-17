@@ -45,11 +45,10 @@ export class McpToolHost {
         output.push({
           definition: {
             type: "function",
-            function: {
-              name: functionName,
-              description: `[MCP ${config.name}] ${toolInfo.description ?? toolInfo.name}`,
-              parameters: boundedSchema(toolInfo.inputSchema, config.name, toolInfo.name),
-            },
+            name: functionName,
+            description: `[MCP ${config.name}] ${toolInfo.description ?? toolInfo.name}`,
+            parameters: boundedSchema(toolInfo.inputSchema, config.name, toolInfo.name),
+            strict: false,
           },
           async prepare(_args: unknown) {
             return { permissionRequests: [permissionRequest("mcp", "call an MCP tool", `${config.name}:${toolInfo.name}`, true, false, "This invokes a configured external MCP server.")] }

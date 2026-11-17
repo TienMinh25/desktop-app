@@ -22,8 +22,13 @@ export class LspClient {
     this.child = spawn(command, args, { cwd, env, stdio: "pipe", windowsHide: true })
     this.child.stdout.on("data", (chunk: Buffer) => this.consume(chunk))
     this.child.stderr.on("data", () => { /* drain server logs */ })
+    this.child.stdin.on("error", (error) => this.failAll(error))
     this.child.on("error", (error) => this.failAll(error))
     this.child.on("close", (code, signal) => this.failAll(new Error(`Language server exited (${code ?? signal})`)))
+  }
+
+  get isRunning() {
+    return !this.closed && this.child.exitCode === null && !this.child.killed
   }
 
   async open(rootPath: string, filePath: string, languageId: string, text: string) {
@@ -31,7 +36,7 @@ export class LspClient {
     await this.initialized
     const uri = pathToFileURL(filePath).href
     const previous = this.openDocuments.get(uri)
-    const version = (previous?.version ?? 0) + 1
+    const version = previous ? previous.version + (previous.text === text ? 0 : 1) : 1
     if (!previous) this.notify("textDocument/didOpen", { textDocument: { uri, languageId, version, text } })
     else if (previous.text !== text) {
       this.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: [{ text }] })
@@ -52,16 +57,23 @@ export class LspClient {
   }
 
   async getDiagnostics(uri: string): Promise<LspDiagnostic[]> {
+    return (await this.getDiagnosticsResult(uri)).diagnostics
+  }
+
+  async getDiagnosticsResult(uri: string): Promise<{ diagnostics: LspDiagnostic[]; timedOut: boolean }> {
     const cached = this.diagnostics.get(uri)
-    if (cached) return cached
+    if (cached) return { diagnostics: cached, timedOut: false }
     return new Promise((resolve) => {
       const waiters = this.diagnosticWaiters.get(uri) ?? []
       const timer = setTimeout(() => {
         const current = this.diagnosticWaiters.get(uri) ?? []
-        this.diagnosticWaiters.set(uri, current.filter((waiter) => waiter !== done))
-        resolve(this.diagnostics.get(uri) ?? [])
+        const remaining = current.filter((waiter) => waiter !== done)
+        if (remaining.length) this.diagnosticWaiters.set(uri, remaining)
+        else this.diagnosticWaiters.delete(uri)
+        const diagnostics = this.diagnostics.get(uri)
+        resolve({ diagnostics: diagnostics ?? [], timedOut: diagnostics === undefined })
       }, 1500)
-      const done = (items: LspDiagnostic[]) => { clearTimeout(timer); resolve(items) }
+      const done = (items: LspDiagnostic[]) => { clearTimeout(timer); resolve({ diagnostics: items, timedOut: false }) }
       waiters.push(done)
       this.diagnosticWaiters.set(uri, waiters)
     })
@@ -83,13 +95,31 @@ export class LspClient {
     if (this.closed) return Promise.reject(new Error("Language server is not running"))
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`LSP request timed out: ${method}`)) }, 30_000)
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        const error = new Error(`LSP request timed out: ${method}`)
+        reject(error)
+        this.failAll(error)
+      }, 30_000)
       this.pending.set(id, { resolve, reject, timer })
-      this.send({ jsonrpc: "2.0", id, method, params })
+      try { this.send({ jsonrpc: "2.0", id, method, params }) }
+      catch (error) {
+        this.pending.delete(id)
+        clearTimeout(timer)
+        reject(error instanceof Error ? error : new Error(String(error)))
+        this.failAll(error instanceof Error ? error : new Error(String(error)))
+      }
     })
   }
 
-  private notify(method: string, params: Record<string, unknown>) { this.send({ jsonrpc: "2.0", method, params }) }
+  private notify(method: string, params: Record<string, unknown>) {
+    try { this.send({ jsonrpc: "2.0", method, params }) }
+    catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error))
+      this.failAll(failure)
+      throw failure
+    }
+  }
 
   private send(message: unknown) {
     const body = Buffer.from(JSON.stringify(message), "utf8")
@@ -128,8 +158,10 @@ export class LspClient {
       return
     }
     if (message.method === "textDocument/publishDiagnostics") {
-      const params = message.params as { uri?: string; diagnostics?: LspDiagnostic[] } | undefined
+      const params = message.params as { uri?: string; version?: number; diagnostics?: LspDiagnostic[] } | undefined
       if (!params?.uri) return
+      const currentVersion = this.openDocuments.get(params.uri)?.version
+      if (params.version !== undefined && currentVersion !== undefined && params.version < currentVersion) return
       const items = params.diagnostics ?? []
       this.diagnostics.set(params.uri, items)
       for (const waiter of this.diagnosticWaiters.get(params.uri) ?? []) waiter(items)

@@ -3,6 +3,7 @@ import type { HarnessCommand } from "../../contracts/commands"
 import type { HarnessEvent } from "../../contracts/events"
 import type { McpConnectorItem, McpListServersParams, McpListServersResponse } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
+import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 
 contextBridge.exposeInMainWorld("desktop", {
@@ -15,6 +16,14 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke(IPC_CHANNELS.MCP_LIST_SERVERS, params),
   getMcpServerVersion: (serverName: string, version?: string): Promise<McpConnectorItem> =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_SERVER_VERSION, { serverName, version }),
+  listLspServers: (): Promise<LspServerStatus[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LSP_LIST_SERVERS),
+  rescanLspServers: (): Promise<LspServerStatus[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LSP_RESCAN_SERVERS),
+  saveLspSettings: (settings: LspSettings): Promise<LspServerStatus[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LSP_SAVE_SETTINGS, settings),
+  openLspGuide: (serverId: string): Promise<{ opened: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LSP_OPEN_GUIDE, serverId),
   checkForUpdates: (): Promise<AppUpdaterState> =>
     ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK),
   startUpdateDownload: (): Promise<{ started: boolean }> =>

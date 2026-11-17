@@ -44,12 +44,20 @@ export class StreamingHttpClient {
   }
 
   post(url: string, body: unknown, headers: UndiciHeadersInit = {}, signal?: AbortSignal): Promise<UndiciResponse> {
+    return this.postSerialized(url, JSON.stringify(body), headers, signal)
+  }
+
+  postSerialized(url: string, body: string, headers: UndiciHeadersInit = {}, signal?: AbortSignal): Promise<UndiciResponse> {
     return this.fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...Object.fromEntries(new UndiciHeaders(headers).entries()) },
-      body: JSON.stringify(body),
+      body,
       signal,
       dispatcher: this.dispatcher,
     })
+  }
+
+  close(): Promise<void> {
+    return this.dispatcher.close()
   }
 }

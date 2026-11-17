@@ -8,6 +8,7 @@ export interface UserQuestion {
 }
 
 interface PendingQuestion {
+  sessionId: string
   resolve(answer: string): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
@@ -32,9 +33,18 @@ export class QuestionManager {
         this.emit({ type: HARNESS_EVENT_TYPES.QUESTION_EXPIRED, requestId: question.requestId, sessionId: question.sessionId, questionRequestId })
         reject(new Error("Question request expired"))
       }, this.timeoutMs)
-      this.pending.set(questionRequestId, { resolve, reject, timer })
+      this.pending.set(questionRequestId, { sessionId: question.sessionId, resolve, reject, timer })
       this.emit({ type: HARNESS_EVENT_TYPES.QUESTION_REQUIRED, ...question, questionRequestId })
     })
+  }
+
+  cancelSession(sessionId: string): void {
+    for (const [questionRequestId, pending] of this.pending) {
+      if (pending.sessionId !== sessionId) continue
+      this.pending.delete(questionRequestId)
+      clearTimeout(pending.timer)
+      pending.reject(new Error("Question canceled because its session was deleted"))
+    }
   }
 
   respond(questionRequestId: string, answer: string): void {

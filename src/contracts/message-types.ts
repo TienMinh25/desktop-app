@@ -1,8 +1,10 @@
 export const HARNESS_COMMAND_TYPES = {
   PING: "app.ping",
   CHAT_SUBMIT: "chat.submit",
+  SESSION_DELETE: "session.delete",
   PERMISSION_RESPOND: "permission.respond",
   QUESTION_RESPOND: "question.respond",
+  LSP_CONFIGURE: "lsp.configure",
 } as const
 
 export const HARNESS_EVENT_TYPES = {
@@ -10,6 +12,8 @@ export const HARNESS_EVENT_TYPES = {
   ASSISTANT_DELTA: "assistant.delta",
   CHAT_COMPLETED: "chat.completed",
   CHAT_FAILED: "chat.failed",
+  CHAT_QUEUED: "chat.queued",
+  CHAT_STARTED: "chat.started",
   PERMISSION_REQUIRED: "permission.required",
   PERMISSION_EXPIRED: "permission.expired",
   QUESTION_REQUIRED: "question.required",

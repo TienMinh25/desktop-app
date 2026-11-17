@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
 import type { ReasoningEffort } from "../../constants"
 import type { ApprovalMode } from "../../../../contracts/permissions"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../../../contracts/message-types"
 import { useProjectSessions } from "../../hooks/useProjectSessions"
 import type { Theme } from "../../theme/ThemeContext"
+import type { TodoItem } from "../../../../contracts/todos"
 import { ConversationStream } from "./components/ConversationStream/ConversationStream"
 import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
@@ -17,6 +18,30 @@ interface WorkspacePageProps {
   onSignOut: () => void
   onShowToast: (message: string) => void
   onThemeChangeToast: (theme: Theme) => void
+}
+
+interface TurnState {
+  requestId: string
+  sessionId: string
+  prompt: string
+  assistantText: string
+  isStreaming: boolean
+  error: string | null
+  permission: { id: string; tool: string; action: string; resource: string; reason: string } | null
+  question: { id: string; prompt: string; choices?: string[] } | null
+  todos: TodoItem[]
+  toolStatus: string | null
+}
+
+function updateMatchingTurn(
+  turns: Record<string, TurnState>,
+  sessionId: string,
+  requestId: string,
+  update: (turn: TurnState) => TurnState,
+): Record<string, TurnState> {
+  const turn = turns[sessionId]
+  if (!turn || turn.requestId !== requestId) return turns
+  return { ...turns, [sessionId]: update(turn) }
 }
 
 function assertNever(value: never): never {
@@ -49,63 +74,93 @@ export function WorkspacePage({
   const [promptText, setPromptText] = useState("")
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
-  const [turn, setTurn] = useState<{
-    requestId: string
-    sessionId: string
-    prompt: string
-    assistantText: string
-    isStreaming: boolean
-    error: string | null
-    permission: { id: string; tool: string; action: string; resource: string; reason: string } | null
-    question: { id: string; prompt: string; choices?: string[] } | null
-    todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }>
-    toolStatus: string | null
-  } | null>(null)
-  const activeRequestId = useRef<string | null>(null)
+  const [customizeInitialTab, setCustomizeInitialTab] = useState<"connectors" | "lsp">("connectors")
+  const [hasEnabledLspServer, setHasEnabledLspServer] = useState<boolean | null>(null)
+  const [turns, setTurns] = useState<Record<string, TurnState>>({})
+  const [queuedPrompts, setQueuedPrompts] = useState<Record<string, Array<{ requestId: string; prompt: string }>>>({})
 
   useEffect(() => {
     return window.desktop.subscribeHarnessEvents((event) => {
       if (event.type === HARNESS_EVENT_TYPES.PONG) return
-      if (event.requestId !== activeRequestId.current) return
       switch (event.type) {
+        case HARNESS_EVENT_TYPES.CHAT_QUEUED:
+          setQueuedPrompts((current) => {
+            const queue = [...(current[event.sessionId] ?? [])]
+            const index = Math.min(queue.length, Math.max(0, event.queuePosition - 1))
+            queue.splice(index, 0, { requestId: event.requestId, prompt: event.prompt })
+            return { ...current, [event.sessionId]: queue }
+          })
+          return
+        case HARNESS_EVENT_TYPES.CHAT_STARTED:
+          setQueuedPrompts((current) => ({
+            ...current,
+            [event.sessionId]: (current[event.sessionId] ?? []).filter((item) => item.requestId !== event.requestId),
+          }))
+          setTurns((current) => ({ ...current, [event.sessionId]: {
+            requestId: event.requestId,
+            sessionId: event.sessionId,
+            prompt: event.prompt,
+            assistantText: "",
+            isStreaming: true,
+            error: null,
+            permission: null,
+            question: null,
+            todos: [],
+            toolStatus: null,
+          } }))
+          return
         case HARNESS_EVENT_TYPES.ASSISTANT_DELTA:
-          setTurn((current) => current ? { ...current, assistantText: current.assistantText + event.text } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, assistantText: turn.assistantText + event.text })))
           return
         case HARNESS_EVENT_TYPES.PERMISSION_REQUIRED:
-          setTurn((current) => current ? { ...current, permission: { id: event.permissionRequestId, tool: event.tool, action: event.action, resource: event.resource, reason: event.reason } } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, permission: { id: event.permissionRequestId, tool: event.tool, action: event.action, resource: event.resource, reason: event.reason } })))
           return
         case HARNESS_EVENT_TYPES.PERMISSION_EXPIRED:
-          setTurn((current) => current ? { ...current, permission: null, error: "Permission request expired. The operation was denied." } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, permission: null, error: "Permission request expired. The operation was denied." })))
           return
         case HARNESS_EVENT_TYPES.QUESTION_REQUIRED:
-          setTurn((current) => current ? { ...current, question: { id: event.questionRequestId, prompt: event.prompt, choices: event.choices } } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, question: { id: event.questionRequestId, prompt: event.prompt, choices: event.choices } })))
           return
         case HARNESS_EVENT_TYPES.QUESTION_EXPIRED:
-          setTurn((current) => current ? { ...current, question: null, error: "The question timed out. The agent can continue without an answer." } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, question: null, error: "The question timed out. The agent can continue without an answer." })))
           return
         case HARNESS_EVENT_TYPES.TODO_UPDATED:
-          setTurn((current) => current ? { ...current, todos: event.todos } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, todos: event.todos })))
           return
         case HARNESS_EVENT_TYPES.TOOL_STARTED:
-          setTurn((current) => current ? { ...current, toolStatus: `Running ${event.toolName}…` } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, toolStatus: `Running ${event.toolName}…` })))
           return
         case HARNESS_EVENT_TYPES.TOOL_COMPLETED:
-          setTurn((current) => current ? { ...current, toolStatus: null } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, toolStatus: null })))
           return
         case HARNESS_EVENT_TYPES.TOOL_FAILED:
-          setTurn((current) => current ? { ...current, toolStatus: `${event.toolName} failed: ${event.message}` } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, toolStatus: `${event.toolName} failed: ${event.message}` })))
           return
         case HARNESS_EVENT_TYPES.CHAT_COMPLETED:
-          setTurn((current) => current ? { ...current, isStreaming: false } : current)
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, isStreaming: false })))
           return
         case HARNESS_EVENT_TYPES.CHAT_FAILED:
-          setTurn((current) => current ? { ...current, isStreaming: false, error: event.message } : current)
+          setQueuedPrompts((current) => ({
+            ...current,
+            [event.sessionId]: (current[event.sessionId] ?? []).filter((item) => item.requestId !== event.requestId),
+          }))
+          setTurns((current) => updateMatchingTurn(current, event.sessionId, event.requestId, (turn) => ({ ...turn, isStreaming: false, error: event.message })))
           return
         default:
           return assertNever(event)
       }
     })
   }, [])
+
+  useEffect(() => {
+    let active = true
+    void window.desktop.listLspServers().then((servers) => {
+      if (active) setHasEnabledLspServer(servers.some((server) => server.enabled))
+    }).catch(() => {
+      if (active) setHasEnabledLspServer(false)
+    })
+    return () => { active = false }
+  }, [isCustomizeOpen])
 
   const handleNewChat = () => {
     setIsCustomizeOpen(false)
@@ -128,11 +183,20 @@ export function WorkspacePage({
     if (!prompt || !activeSessionId) return
     const requestId = crypto.randomUUID()
     const sessionId = String(activeSessionId)
-    activeRequestId.current = requestId
-    setTurn({ requestId, sessionId, prompt, assistantText: "", isStreaming: true, error: null, permission: null, question: null, todos: [], toolStatus: null })
     window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.CHAT_SUBMIT, requestId, sessionId, prompt, model, workspacePath: workspacePath ?? undefined, approvalMode })
     setPromptText("")
   }
+
+  const handleDeleteSession = (sessionId: number) => {
+    if (!deleteSession(sessionId)) return
+    const runtimeSessionId = String(sessionId)
+    window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.SESSION_DELETE, sessionId: runtimeSessionId })
+    setTurns((current) => { const next = { ...current }; delete next[runtimeSessionId]; return next })
+    setQueuedPrompts((current) => { const next = { ...current }; delete next[runtimeSessionId]; return next })
+  }
+
+  const turn = activeSessionId === null ? undefined : turns[String(activeSessionId)]
+  const activeQueue = activeSessionId === null ? [] : queuedPrompts[String(activeSessionId)] ?? []
 
   const sidebarContent = (
     <ProjectSidebar
@@ -142,13 +206,16 @@ export function WorkspacePage({
       activeSessionId={isCustomizeOpen ? null : activeSessionId}
       expandedProjects={expandedProjects}
       isCustomizeActive={isCustomizeOpen}
-      onSelectCustomize={() => setIsCustomizeOpen(true)}
+      onSelectCustomize={() => {
+        setCustomizeInitialTab("connectors")
+        setIsCustomizeOpen(true)
+      }}
       onSelectProject={handleSelectProject}
       onToggleExpandProject={toggleExpandProject}
       onSelectSession={handleSelectSession}
       onNewChat={handleNewChat}
       onRenameSession={renameSession}
-      onDeleteSession={deleteSession}
+      onDeleteSession={handleDeleteSession}
     />
   )
 
@@ -160,10 +227,10 @@ export function WorkspacePage({
       sidebarContent={sidebarContent}
     >
       {isCustomizeOpen ? (
-        <CustomizePanel onShowToast={onShowToast} />
+        <CustomizePanel onShowToast={onShowToast} initialTab={customizeInitialTab} />
       ) : (
         <>
-          {turn || activeSession?.hasHistory ? (
+          {turn || activeQueue.length > 0 || activeSession?.hasHistory ? (
             <>
               <div className={styles.chatTopHeader}>
                 <span>{activeSession?.title ?? "New chat"}</span>
@@ -177,14 +244,15 @@ export function WorkspacePage({
                   permission={turn.permission}
                   question={turn.question}
                   todos={turn.todos}
+                  pendingPrompts={activeQueue}
                   toolStatus={turn.toolStatus}
                   onPermissionDecision={(id, decision) => {
                     window.desktop.respondToPermission(id, decision)
-                    setTurn((current) => current ? { ...current, permission: null } : current)
+                    setTurns((current) => updateMatchingTurn(current, turn.sessionId, turn.requestId, (currentTurn) => ({ ...currentTurn, permission: null })))
                   }}
                   onQuestionAnswer={(id, answer) => {
                     window.desktop.respondToQuestion(id, answer)
-                    setTurn((current) => current ? { ...current, question: null } : current)
+                    setTurns((current) => updateMatchingTurn(current, turn.sessionId, turn.requestId, (currentTurn) => ({ ...currentTurn, question: null })))
                   }}
                 />
               ) : null}
@@ -210,6 +278,12 @@ export function WorkspacePage({
                 />
               </svg>
               <h1 className={styles.heroTitle}>What should we build?</h1>
+              {hasEnabledLspServer === false && <button className={styles.lspSetupLink} type="button" onClick={() => {
+                setCustomizeInitialTab("lsp")
+                setIsCustomizeOpen(true)
+              }}>
+                Set up LSP for code navigation
+              </button>}
             </div>
           )}
 
@@ -217,7 +291,6 @@ export function WorkspacePage({
             promptText={promptText}
             onPromptChange={setPromptText}
             onSendPrompt={handleSendPrompt}
-            isBusy={Boolean(turn?.isStreaming)}
             onWorkspacePathChange={setWorkspacePath}
           />
         </>

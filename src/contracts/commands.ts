@@ -1,6 +1,7 @@
 import type { ApprovalMode } from "./permissions"
 import { z } from "zod"
 import { HARNESS_COMMAND_TYPES } from "./message-types"
+import { LspServerConfigSchema } from "./lsp"
 
 const shortId = z.string().max(199)
 
@@ -13,7 +14,13 @@ export const SubmitPromptCommandSchema = z.object({
   prompt: z.string().min(1).max(100_000), 
   model: z.string().min(1).max(199),
   workspacePath: z.string().max(3999).optional(),
+  goalId: shortId.optional(),
   approvalMode: z.enum(["manual", "auto-safe", "full-access"] satisfies readonly ApprovalMode[]),
+}).strict()
+
+export const DeleteSessionCommandSchema = z.object({
+  type: z.literal(HARNESS_COMMAND_TYPES.SESSION_DELETE),
+  sessionId: shortId,
 }).strict()
 
 export const PermissionResponseCommandSchema = z.object({
@@ -28,13 +35,20 @@ export const QuestionResponseCommandSchema = z.object({
   answer: z.string().trim().min(1).max(10_000),
 }).strict()
 
+export const LspConfigureCommandSchema = z.object({
+  type: z.literal(HARNESS_COMMAND_TYPES.LSP_CONFIGURE),
+  servers: z.array(LspServerConfigSchema).max(64),
+}).strict()
+
 export const HarnessCommandSchema = z.discriminatedUnion("type", [
-  PingCommandSchema, SubmitPromptCommandSchema, PermissionResponseCommandSchema, QuestionResponseCommandSchema,
+  PingCommandSchema, SubmitPromptCommandSchema, DeleteSessionCommandSchema, PermissionResponseCommandSchema, QuestionResponseCommandSchema, LspConfigureCommandSchema,
 ])
 
 export type PingCommand = z.infer<typeof PingCommandSchema>
 export type SubmitPromptCommand = z.infer<typeof SubmitPromptCommandSchema>
+export type DeleteSessionCommand = z.infer<typeof DeleteSessionCommandSchema>
 export type PermissionResponseCommand = z.infer<typeof PermissionResponseCommandSchema>
 export type QuestionResponseCommand = z.infer<typeof QuestionResponseCommandSchema>
+export type LspConfigureCommand = z.infer<typeof LspConfigureCommandSchema>
 export type HarnessCommand = z.infer<typeof HarnessCommandSchema>
 

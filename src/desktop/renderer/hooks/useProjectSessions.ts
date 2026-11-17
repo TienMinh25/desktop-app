@@ -88,7 +88,7 @@ export function useProjectSessions(assignedProjectIds: string[]) {
   }
 
   const deleteSession = (sessionId: number) => {
-    if (!window.confirm("Delete this chat session?")) return
+    if (!window.confirm("Delete this chat session?")) return false
     const wasActive = sessionId === activeSessionId
     const remaining = sessions.filter((s) => s.id !== sessionId)
     setSessions(remaining)
@@ -104,6 +104,7 @@ export function useProjectSessions(assignedProjectIds: string[]) {
         createNewChat(selectedProjectId)
       }
     }
+    return true
   }
 
   return {

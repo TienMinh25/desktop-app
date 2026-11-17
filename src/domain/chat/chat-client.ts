@@ -1,27 +1,29 @@
 import type {
-  ChatCompletionRequest,
   ChatModel,
   ChatStreamEvent,
   ChatClientConfig,
+  ResponseInputItem,
+  ResponseOutputItem,
+  ResponsesRequest,
+  EasyInputMessage,
+  FunctionCallOutputItem,
 } from "./types"
 import { StreamingHttpClient, type UndiciFetch } from "../../infrastructure/http/http-client"
 import type { Response as HttpResponse } from "undici-types"
+import { RESPONSES_LIMITS } from "./responses-limits"
 
 const RESPONSE_HEADERS_TIMEOUT_MS = 300_000
 const STREAM_IDLE_TIMEOUT_MS = 900_000
 
-interface ChatStreamChunk {
-  choices?: Array<{
-    delta?: {
-      content?: string | null
-      tool_calls?: Array<{
-        index: number
-        id?: string
-        function?: { name?: string; arguments?: string }
-      }>
-    }
-    finish_reason?: string | null
-  }>
+interface ResponsesStreamEvent {
+  type: string
+  delta?: string
+  response?: {
+    output?: unknown
+    error?: { message?: string }
+    incomplete_details?: { reason?: string }
+  }
+  error?: { message?: string }
 }
 
 export class ChatClient implements ChatModel {
@@ -38,7 +40,7 @@ export class ChatClient implements ChatModel {
   }
 
   async *stream(
-    request: ChatCompletionRequest,
+    request: ResponsesRequest,
     signal?: AbortSignal,
   ): AsyncIterable<ChatStreamEvent> {
     const controller = new AbortController()
@@ -47,57 +49,100 @@ export class ChatClient implements ChatModel {
     else signal?.addEventListener("abort", forwardAbort, { once: true })
 
     try {
-      const response = await this.http.post(
+      const body = { ...request, model: this.config.model, stream: true as const }
+      enforceRequestMediaLimits(body.input)
+      const serializedBody = JSON.stringify(body)
+      const serializedBytes = Buffer.byteLength(serializedBody, "utf8")
+      if (serializedBytes >= RESPONSES_LIMITS.serializedRequestBytes) {
+        throw new Error("Responses request exceeds the 400 MB serialized payload limit")
+      }
+
+      const response = await this.http.postSerialized(
         this.config.endpoint,
-        { ...request, model: this.config.model, stream: true },
+        serializedBody,
         { Authorization: `Bearer ${this.config.accessToken}` },
         controller.signal,
       )
 
       if (!response.ok) {
-        const body = await readResponsePreview(response, 8000)
-        throw new Error(`Chat endpoint returned ${response.status}: ${body}`)
+        const bodyPreview = await readResponsePreview(response, 8000)
+        throw new Error(`Responses endpoint returned ${response.status}: ${bodyPreview}`)
       }
-      if (!response.body) throw new Error("Chat endpoint returned an empty response body")
+      if (!response.body) throw new Error("Responses endpoint returned an empty response body")
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let pending = ""
-      let finished = false
+      let frameBytes = 0
+      let frameData: string[] = []
+      let completed = false
 
       try {
-        while (!finished) {
+        while (!completed) {
           const { value, done } = await reader.read()
           pending += decoder.decode(value, { stream: !done })
-          if (pending.length > 1_000_000) throw new Error("Chat SSE frame exceeded 1 MB")
-          const lines = pending.split(/\r?\n/)
-          pending = lines.pop() ?? ""
-          if (done && pending) { lines.push(pending); pending = "" }
+          const extracted = extractSseLines(pending, done)
+          pending = extracted.remainder
+          const completedFrames: string[] = []
 
-          for (const line of lines) {
+          for (const { line, delimiterBytes } of extracted.lines) {
+            frameBytes += Buffer.byteLength(line, "utf8") + delimiterBytes
+            if (frameBytes > RESPONSES_LIMITS.sseFrameBytes) {
+              throw new Error("Responses SSE frame exceeded the 1 MB limit")
+            }
+
+            if (line === "") {
+              if (frameData.length) completedFrames.push(frameData.join("\n"))
+              frameBytes = 0
+              frameData = []
+              continue
+            }
+
             if (!line.startsWith("data:")) continue
-            const data = line.slice(5).trim()
+            frameData.push(line.slice(5).replace(/^ /, ""))
+          }
+
+          if (frameBytes + Buffer.byteLength(pending, "utf8") > RESPONSES_LIMITS.sseFrameBytes) {
+            throw new Error("Responses SSE frame exceeded the 1 MB limit")
+          }
+
+          if (done && frameData.length) {
+            completedFrames.push(frameData.join("\n"))
+            frameBytes = 0
+            frameData = []
+          }
+
+          for (const frameDataText of completedFrames) {
+            const data = frameDataText.trim()
             if (!data) continue
             if (data === "[DONE]") {
-              finished = true
+              completed = true
               break
             }
 
-            const chunk = parseChatStreamChunk(data)
-            const delta = chunk.choices?.[0]?.delta
-            if (delta?.content) yield { type: "text.delta", text: delta.content }
-            for (const toolCall of delta?.tool_calls ?? []) {
-              yield {
-                type: "tool-call.delta",
-                index: toolCall.index,
-                id: toolCall.id,
-                name: toolCall.function?.name,
-                argumentsDelta: toolCall.function?.arguments,
+            const event = parseResponsesEvent(data)
+            if (event.type === "response.output_text.delta") {
+              if (typeof event.delta !== "string") throw new Error("Responses text delta is missing its text")
+              yield { type: "text.delta", text: event.delta }
+            } else if (event.type === "response.completed") {
+              const output = event.response?.output
+              if (!Array.isArray(output) || !output.every(isResponseOutputItem)) {
+                throw new Error("Responses completed event has an invalid output array")
               }
+              yield { type: "response.output-items", items: output }
+              completed = true
+              break
+            } else if (event.type === "response.failed") {
+              throw new Error(event.response?.error?.message ?? "Responses generation failed")
+            } else if (event.type === "response.incomplete") {
+              const reason = event.response?.incomplete_details?.reason
+              throw new Error(`Responses generation was incomplete${reason ? `: ${reason}` : ""}`)
+            } else if (event.type === "error") {
+              throw new Error(event.error?.message ?? "Responses streaming failed")
             }
           }
 
-          if (done) finished = true
+          if (done && !completed) throw new Error("Responses stream ended before response.completed")
         }
       } finally {
         await reader.cancel().catch(() => {})
@@ -107,38 +152,107 @@ export class ChatClient implements ChatModel {
       signal?.removeEventListener("abort", forwardAbort)
     }
   }
+
+  async close(): Promise<void> {
+    await this.http.close()
+  }
 }
 
-function parseChatStreamChunk(data: string): ChatStreamChunk {
+function enforceRequestMediaLimits(input: ResponseInputItem[]) {
+  let inputFileBytes = 0
+  let inputImagePayloadBytes = 0
+
+  for (const item of input) {
+    const content = getContent(item)
+    if (!content) continue
+    for (const part of content) {
+      if (part.type === "input_file") {
+        if (typeof part.file_data !== "string") throw new Error("input_file.file_data must be a Base64 data URL")
+        const sourceBytes = getDataUrlDecodedBytes(part.file_data)
+        if (sourceBytes >= RESPONSES_LIMITS.inputFileBytes) {
+          throw new Error("Each input_file must be smaller than 40 MB")
+        }
+        inputFileBytes += sourceBytes
+      } else if (part.type === "input_image" && typeof part.image_url === "string" && part.image_url.startsWith("data:")) {
+        inputImagePayloadBytes += Buffer.byteLength(part.image_url, "utf8")
+      }
+    }
+  }
+
+  if (inputFileBytes >= RESPONSES_LIMITS.inputFilesPerRequestBytes) {
+    throw new Error("The combined input_file content in this Responses request must be smaller than 40 MB")
+  }
+  if (inputImagePayloadBytes >= RESPONSES_LIMITS.inputImagesPerRequestBytes) {
+    throw new Error("The combined serialized input_image payload in this Responses request must be smaller than 400 MB")
+  }
+}
+
+function getContent(item: ResponseInputItem): Array<{ type: string; [key: string]: unknown }> | undefined {
+  if (item.type === "function_call_output") {
+    const output = (item as FunctionCallOutputItem).output
+    return Array.isArray(output) ? output.filter(isRecord) as unknown as Array<{ type: string; [key: string]: unknown }> : undefined
+  }
+  if ("content" in item) {
+    const content = (item as EasyInputMessage).content
+    return Array.isArray(content) ? content.filter(isRecord) as unknown as Array<{ type: string; [key: string]: unknown }> : undefined
+  }
+  return undefined
+}
+
+function getDataUrlDecodedBytes(value: string): number {
+  const comma = value.indexOf(",")
+  if (comma < 0 || !value.slice(0, comma).endsWith(";base64")) {
+    throw new Error("input_file.file_data must be a Base64 data URL")
+  }
+  const encoded = value.slice(comma + 1)
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new Error("input_file.file_data contains invalid Base64 data")
+  }
+  const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0
+  return (encoded.length / 4) * 3 - padding
+}
+
+function parseResponsesEvent(data: string): ResponsesStreamEvent {
   let value: unknown
   try { value = JSON.parse(data) }
-  catch (error) { throw new Error(`Invalid Chat Completions stream chunk: ${error instanceof Error ? error.message : String(error)}`) }
-  if (!isChatStreamChunk(value)) throw new Error("Invalid Chat Completions stream chunk shape")
-  return value
+  catch (error) { throw new Error(`Invalid Responses stream event: ${error instanceof Error ? error.message : String(error)}`) }
+  if (!isRecord(value) || typeof value.type !== "string") throw new Error("Invalid Responses stream event shape")
+  return value as unknown as ResponsesStreamEvent
 }
 
-function isChatStreamChunk(value: unknown): value is ChatStreamChunk {
-  if (!isRecord(value)) return false
-  if (value.choices === undefined) return true
-  if (!Array.isArray(value.choices)) return false
-  return value.choices.every((choice) => {
-    if (!isRecord(choice)) return false
-    if (choice.finish_reason !== undefined && choice.finish_reason !== null && typeof choice.finish_reason !== "string") return false
-    if (choice.delta === undefined) return true
-    if (!isRecord(choice.delta)) return false
-    const delta = choice.delta
-    if (delta.content !== undefined && delta.content !== null && typeof delta.content !== "string") return false
-    if (delta.tool_calls === undefined) return true
-    if (!Array.isArray(delta.tool_calls)) return false
-    return delta.tool_calls.every((toolCall) => {
-      if (!isRecord(toolCall) || !Number.isInteger(toolCall.index)) return false
-      if (toolCall.id !== undefined && typeof toolCall.id !== "string") return false
-      if (toolCall.function === undefined) return true
-      if (!isRecord(toolCall.function)) return false
-      return (toolCall.function.name === undefined || typeof toolCall.function.name === "string")
-        && (toolCall.function.arguments === undefined || typeof toolCall.function.arguments === "string")
-    })
-  })
+function extractSseLines(value: string, flush: boolean): {
+  lines: Array<{ line: string; delimiterBytes: number }>
+  remainder: string
+} {
+  const lines: Array<{ line: string; delimiterBytes: number }> = []
+  let lineStart = 0
+  let position = 0
+
+  while (position < value.length) {
+    const character = value[position]
+    if (character !== "\r" && character !== "\n") {
+      position += 1
+      continue
+    }
+    if (character === "\r" && position === value.length - 1 && !flush) break
+
+    const isCrLf = character === "\r" && value[position + 1] === "\n"
+    const delimiterCharacters = isCrLf ? 2 : 1
+    lines.push({ line: value.slice(lineStart, position), delimiterBytes: delimiterCharacters })
+    position += delimiterCharacters
+    lineStart = position
+  }
+
+  let remainder = value.slice(lineStart)
+  if (flush && remainder) {
+    lines.push({ line: remainder, delimiterBytes: 0 })
+    remainder = ""
+  }
+  return { lines, remainder }
+}
+
+function isResponseOutputItem(value: unknown): value is ResponseOutputItem {
+  return isRecord(value) && typeof value.type === "string"
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -161,4 +275,3 @@ async function readResponsePreview(response: HttpResponse, limit: number): Promi
     await reader.cancel().catch(() => {})
   }
 }
-

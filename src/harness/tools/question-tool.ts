@@ -9,7 +9,8 @@ export const questionTool: HarnessTool = {
   }, ["prompt"]),
   async prepare(value) {
     const args = objectArgs(value)
-    const prompt = stringArg(args, "prompt")
+    const prompt = stringArg(args, "prompt").trim()
+    if (!prompt) throw new Error("prompt must be a non-empty string")
     if (prompt.length > 2000) throw new Error("prompt must be at most 2,000 characters")
     let choices: string[] | undefined
     if (args.choices !== undefined) {

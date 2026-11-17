@@ -1,4 +1,5 @@
 import { HARNESS_EVENT_TYPES } from "./message-types"
+import type { TodoItem } from "./todos"
 export { HARNESS_EVENT_TYPES } from "./message-types"
 
 export interface BaseEvent { requestId: string }
@@ -16,6 +17,17 @@ export interface AssistantDeltaEvent extends SessionEvent {
 
 export interface ChatCompletedEvent extends SessionEvent {
   type: typeof HARNESS_EVENT_TYPES.CHAT_COMPLETED
+}
+
+export interface ChatQueuedEvent extends SessionEvent {
+  type: typeof HARNESS_EVENT_TYPES.CHAT_QUEUED
+  prompt: string
+  queuePosition: number
+}
+
+export interface ChatStartedEvent extends SessionEvent {
+  type: typeof HARNESS_EVENT_TYPES.CHAT_STARTED
+  prompt: string
 }
 
 export interface ChatFailedEvent extends SessionEvent {
@@ -51,7 +63,9 @@ export interface QuestionExpiredEvent extends SessionEvent {
 
 export interface TodoUpdatedEvent extends SessionEvent {
   type: typeof HARNESS_EVENT_TYPES.TODO_UPDATED
-  todos: Array<{ content: string; status: "pending" | "in_progress" | "completed" }>
+  scopeId: string
+  scopeType: "request" | "goal"
+  todos: TodoItem[]
 }
 
 export interface ToolStartedEvent extends SessionEvent {
@@ -73,4 +87,4 @@ export interface ToolFailedEvent extends SessionEvent {
   message: string
 }
 
-export type HarnessEvent = PongEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatFailedEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent
+export type HarnessEvent = PongEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatQueuedEvent | ChatStartedEvent | ChatFailedEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent
