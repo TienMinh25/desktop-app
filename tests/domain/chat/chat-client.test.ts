@@ -48,6 +48,19 @@ it("sends the configured model and streams Responses text and output items", asy
   }
 })
 
+it("accepts a Responses SSE frame larger than 1 MB", async () => {
+  const largeArgument = "x".repeat(1_100_000)
+  const callItem = { type: "function_call", id: "fc-large", call_id: "call-large", name: "write", arguments: JSON.stringify({ path: "large.txt", content: largeArgument }) }
+  const client = createChatClient(async () => sseResponse(`data: ${JSON.stringify({ type: "response.completed", response: { output: [callItem] } })}\n\n`))
+  try {
+    const events = []
+    for await (const event of client.stream({ model: "model", input: [], stream: true })) events.push(event)
+    expect(events[0]).toMatchObject({ type: "response.output-items", items: [callItem] })
+  } finally {
+    await client.close()
+  }
+})
+
 it("returns endpoint errors and rejects malformed Responses SSE frames", async () => {
   const failed = createChatClient(async () => new Response("backend unavailable", { status: 503 }), "model")
   try {

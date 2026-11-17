@@ -65,7 +65,6 @@ export class ChatClient implements ChatModel {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let pending = ""
-      let frameBytes = 0
       let frameData: string[] = []
       let completed = false
 
@@ -77,15 +76,9 @@ export class ChatClient implements ChatModel {
           pending = extracted.remainder
           const completedFrames: string[] = []
 
-          for (const { line, delimiterBytes } of extracted.lines) {
-            frameBytes += Buffer.byteLength(line, "utf8") + delimiterBytes
-            if (frameBytes > RESPONSES_LIMITS.sseFrameBytes) {
-              throw new Error("Responses SSE frame exceeded the 1 MB limit")
-            }
-
+          for (const { line } of extracted.lines) {
             if (line === "") {
               if (frameData.length) completedFrames.push(frameData.join("\n"))
-              frameBytes = 0
               frameData = []
               continue
             }
@@ -94,13 +87,8 @@ export class ChatClient implements ChatModel {
             frameData.push(line.slice(5).replace(/^ /, ""))
           }
 
-          if (frameBytes + Buffer.byteLength(pending, "utf8") > RESPONSES_LIMITS.sseFrameBytes) {
-            throw new Error("Responses SSE frame exceeded the 1 MB limit")
-          }
-
           if (done && frameData.length) {
             completedFrames.push(frameData.join("\n"))
-            frameBytes = 0
             frameData = []
           }
 

@@ -14,10 +14,14 @@ it("writes generated content inside the effective workspace after reporting perm
   } finally { await testContext.cleanup() }
 })
 
-it("rejects non-string content and over-limit payloads before writing", async () => {
+it("rejects non-string content and writes text payloads larger than 1 MB", async () => {
   const testContext = await createToolTestContext()
   try {
     await expect(writeTool.prepare!({ path: "x", content: 1 }, testContext.context)).rejects.toThrow("content must be a string")
-    await expect(writeTool.prepare!({ path: "x", content: "x".repeat(1_000_001) }, testContext.context)).rejects.toThrow("1 MB limit")
+    const content = "x".repeat(1_000_001)
+    const args = { path: "generated.data.txt", content }
+    const prepared = await writeTool.prepare!(args, testContext.context)
+    await writeTool.execute(args, testContext.context, prepared.data)
+    expect((await readFile(join(testContext.context.workspacePath, args.path), "utf8")).length).toBe(content.length)
   } finally { await testContext.cleanup() }
 })

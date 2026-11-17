@@ -92,10 +92,109 @@ it("lists matching paths with ripgrep and caps file results", async () => {
   expect(result.truncated).toBe(true)
 })
 
+it("respects ignore rules and omits hidden files from broad listings", async () => {
+  await writeFile(join(root, ".gitignore"), "ignored/\n")
+  await mkdir(join(root, "ignored"))
+  await writeFile(join(root, "ignored", "secret.ts"), "needle")
+  await mkdir(join(root, ".hidden"))
+  await writeFile(join(root, ".hidden", "config.ts"), "needle")
+
+  const files = await environment.listFiles("**/*", 100)
+  const matches = await environment.searchText("needle", "**/*", 100)
+
+  expect(files.files.map((file) => file.relativePath)).not.toContain("ignored/secret.ts")
+  expect(files.files.map((file) => file.relativePath)).not.toContain(".hidden/config.ts")
+  expect(matches.matches).toEqual([])
+})
+
+it("allows an explicit glob to include a hidden path while honoring ignore rules", async () => {
+  await mkdir(join(root, ".hidden"))
+  await writeFile(join(root, ".hidden", "config.ts"), "export {}")
+
+  const result = await environment.listFiles(".hidden/**/*.ts", 100)
+
+  expect(result.files.map((file) => file.relativePath)).toEqual([".hidden/config.ts"])
+})
+
+it("allows a brace glob that explicitly names a hidden directory", async () => {
+  await mkdir(join(root, ".hidden"))
+  await writeFile(join(root, ".hidden", "config.ts"), "hidden")
+  await writeFile(join(root, "src", "config.ts"), "visible")
+
+  const result = await environment.listFiles("**/{.hidden,src}/**/*.ts", 100)
+
+  expect(result.files.map((file) => file.relativePath)).toContain(".hidden/config.ts")
+  expect(result.files.map((file) => file.relativePath)).toContain("src/config.ts")
+})
+
+it("uses ripgrep brace and character-class glob syntax consistently", async () => {
+  await writeFile(join(root, "src", "main.tsx"), "export {}")
+  await writeFile(join(root, "src", "main.test.ts"), "export {}")
+  await writeFile(join(root, "src", "main.test.tsx"), "export {}")
+
+  const braces = await environment.listFiles("src/**/*.{ts,tsx}", 100)
+  const characterClass = await environment.listFiles("src/**/*.[t]s", 100)
+
+  expect(braces.files.map((file) => file.relativePath)).toContain("src/main.tsx")
+  expect(braces.files.map((file) => file.relativePath)).toContain("src/main.test.ts")
+  expect(characterClass.files.map((file) => file.relativePath)).toContain("src/main.test.ts")
+})
+
+it("reports malformed ripgrep glob syntax instead of silently returning no matches", async () => {
+  await expect(environment.listFiles("src/**/*.{ts,", 100)).rejects.toThrow()
+})
+
+it("searches text case-insensitively by default and supports a case-sensitive override", async () => {
+  await writeFile(join(root, "src", "index.ts"), "Needle\nneedle\n")
+
+  const insensitive = await environment.searchText("needle", "**/*.ts", 10)
+  const sensitive = await environment.searchText("needle", "**/*.ts", 10, true)
+
+  expect(insensitive.matches.map((match) => match.line)).toEqual([1, 2])
+  expect(sensitive.matches.map((match) => match.line)).toEqual([2])
+})
+
+it("returns structured workspace-relative search rows without reparsing path delimiters", async () => {
+  await writeFile(join(root, "src", "index.ts"), "first\nneedle:value\nlast\n")
+
+  const result = await environment.searchText("needle", "**/*.ts", 10)
+
+  expect(result.matches).toEqual([{ path: "src/index.ts", line: 2, text: "needle:value" }])
+  expect(result.truncated).toBe(false)
+})
+
+it("preserves the first matching lines and only reports truncation when more results exist", async () => {
+  await writeFile(join(root, "src", "index.ts"), "needle first\nneedle second\n")
+
+  const limited = await environment.searchText("needle", "**/*.ts", 1)
+  const exact = await environment.searchText("needle", "**/*.ts", 2)
+
+  expect(limited.matches).toEqual([{ path: "src/index.ts", line: 1, text: "needle first" }])
+  expect(limited.truncated).toBe(true)
+  expect(exact.matches).toHaveLength(2)
+  expect(exact.truncated).toBe(false)
+})
+
+it("does not mark an exact result limit as truncated when later file batches have no matches", async () => {
+  const longPrefix = "x".repeat(180)
+  const paths = Array.from({ length: 200 }, (_, index) => `${String(index).padStart(3, "0")}-${longPrefix}.txt`)
+  const firstPath = paths[0]!
+  await Promise.all(paths.map((path, index) => writeFile(join(root, path), index === 0 ? "needle\n" : "nothing here\n")))
+
+  const result = await environment.searchText("needle", "**/*", 1, false, paths)
+
+  expect(result.matches).toEqual([{ path: firstPath, line: 1, text: "needle" }])
+  expect(result.truncated).toBe(false)
+})
+
+it("reports regex syntax errors from ripgrep instead of applying JavaScript regex rules", async () => {
+  await expect(environment.searchText("(?=needle)", "**/*.ts", 10)).rejects.toThrow()
+})
+
 it("searches text with ripgrep and returns workspace-relative matches", async () => {
   await writeFile(join(root, "src", "index.ts"), "first\nneedle value\nlast\n")
   const result = await environment.searchText("needle", "**/*.ts", 10)
-  expect(result.matches).toEqual(["src/index.ts:2:needle value"])
+  expect(result.matches).toEqual([{ path: "src/index.ts", line: 2, text: "needle value" }])
   expect(result.truncated).toBe(false)
 })
 
@@ -129,6 +228,12 @@ it("does not follow a symlink when writing a file", async () => {
   await symlink(outsideFile, link)
   await expect(environment.writeTextFile(link, "changed")).rejects.toThrow("Refusing to write through a symbolic link")
   expect(await readFile(outsideFile, "utf8")).toBe("outside")
+})
+
+it("does not search a symlink supplied as a candidate path", async () => {
+  await symlink(outsideFile, join(root, "linked-outside.txt"))
+
+  await expect(environment.searchText("outside", "**/*", 10, false, ["linked-outside.txt"])).rejects.toThrow("regular workspace files")
 })
 
 it("terminates the entire process tree when a command times out", async () => {
@@ -185,6 +290,6 @@ it("keeps the host alive until a stubborn POSIX descendant is force-killed", asy
 })
 
 it("rejects patch paths that escape the workspace", () => {
-  expect(() => environment.validatePatch("--- a/../outside.txt\n+++ b/../outside.txt\n@@ -1 +1 @@\n-x\n+y\n")).toThrow("Patch path escapes workspace")
-  expect(environment.validatePatch("--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-x\n+y\n")).toEqual(["src/index.ts"])
+  expect(() => environment.validatePatch("*** Begin Patch\n*** Update File: ../outside.txt\n@@\n-x\n+y\n*** End Patch")).toThrow("Patch path escapes workspace")
+  expect(environment.validatePatch("*** Begin Patch\n*** Update File: src/index.ts\n@@\n-x\n+y\n*** End Patch")).toEqual(["src/index.ts"])
 })
