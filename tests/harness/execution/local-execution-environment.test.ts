@@ -290,6 +290,6 @@ it("keeps the host alive until a stubborn POSIX descendant is force-killed", asy
 })
 
 it("rejects patch paths that escape the workspace", () => {
-  expect(() => environment.validatePatch("--- a/../outside.txt\n+++ b/../outside.txt\n@@ -1 +1 @@\n-x\n+y\n")).toThrow("Patch path escapes workspace")
-  expect(environment.validatePatch("--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-x\n+y\n")).toEqual(["src/index.ts"])
+  expect(() => environment.validatePatch("*** Begin Patch\n*** Update File: ../outside.txt\n@@\n-x\n+y\n*** End Patch")).toThrow("Patch path escapes workspace")
+  expect(environment.validatePatch("*** Begin Patch\n*** Update File: src/index.ts\n@@\n-x\n+y\n*** End Patch")).toEqual(["src/index.ts"])
 })

@@ -4,5 +4,4 @@ export const RESPONSES_LIMITS = {
   inputFilesPerRequestBytes: 40_000_000,
   inputImagesPerRequestBytes: 400_000_000,
   serializedRequestBytes: 400_000_000,
-  sseFrameBytes: 1_000_000,
 } as const

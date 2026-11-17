@@ -1,9 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { applyPatch as applyUnifiedPatch, parsePatch } from "diff"
 import { constants } from "node:fs"
 import type { Stats } from "node:fs"
 import { lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { CommandResult, ExecutionEnvironment, FileListResult, ResolvedPath, TextFilePage, TextSearchResult } from "./execution-environment"
 import { resolveShellInvocation } from "./shell-selector"
 import { READ_LIMITS } from "./read-limits"
@@ -198,53 +197,64 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
 
   async applyPatch(patch: string): Promise<string> {
     const paths = this.validatePatch(patch)
-    const parsed = parsePatch(patch)
-    if (parsed.length !== paths.length) throw new Error("Patch could not be parsed as a unified diff")
-    const changes: Array<{ path: string; content: string | null }> = []
-    for (const filePatch of parsed) {
-      if (filePatch.isRename || filePatch.isCopy) throw new Error("Patch rename and copy operations are not supported")
-      const oldName = filePatch.oldFileName ? normalizePatchPath(filePatch.oldFileName) : undefined
-      const newName = filePatch.newFileName ? normalizePatchPath(filePatch.newFileName) : undefined
-      const sourceName = oldName === "/dev/null" ? undefined : oldName
-      const targetName = newName === "/dev/null" ? sourceName : newName
-      if (!targetName || (sourceName && sourceName !== targetName)) throw new Error("Patch must identify one unchanged workspace path per file")
-      const workspace = await realpath(this.workspacePath)
-      const candidatePath = resolve(workspace, targetName)
-      const target = await this.resolvePath(targetName, true)
-      if (!target.insideWorkspace) throw new Error(`Patch path escapes workspace: ${targetName}`)
+    const operations = parseOpenCodePatch(patch)
+    if (operations.length === 0) throw new Error("Patch does not contain any file operations")
+    const workspace = await realpath(this.workspacePath)
+    const changes: Array<{ sourcePath?: string; targetPath: string; content: string | null }> = []
+    const touchedPaths = new Set<string>()
+
+    for (const operation of operations) {
+      for (const name of [operation.path, operation.destination].filter((path): path is string => path !== undefined)) {
+        if (touchedPaths.has(name)) throw new Error(`Patch contains conflicting operations for ${name}`)
+        touchedPaths.add(name)
+      }
+      const target = await this.resolvePath(operation.path, true)
+      if (!target.insideWorkspace) throw new Error(`Patch path escapes workspace: ${operation.path}`)
+      const candidatePath = resolve(workspace, operation.path)
       let source = ""
-      if (sourceName) {
-        const info = await lstat(candidatePath)
-        if (info.isSymbolicLink() || !info.isFile()) throw new Error(`Patch target must be a regular file, not a symbolic link: ${targetName}`)
-        source = await this.readTextFile(target.path, 2_000_000, true)
+      if (operation.kind === "add") {
+        try { await lstat(candidatePath); throw new Error(`Patch create target already exists: ${operation.path}`) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error }
       } else {
-        try { await lstat(candidatePath); throw new Error(`Patch create target already exists: ${targetName}`) }
+        const info = await lstat(candidatePath)
+        if (info.isSymbolicLink() || !info.isFile()) throw new Error(`Patch target must be a regular file, not a symbolic link: ${operation.path}`)
+        source = await this.readTextFile(target.path, Number.MAX_SAFE_INTEGER, true)
+      }
+
+      const targetName = operation.destination ?? operation.path
+      const targetResolved = await this.resolvePath(targetName, true)
+      if (!targetResolved.insideWorkspace) throw new Error(`Patch path escapes workspace: ${targetName}`)
+      if (operation.destination) {
+        try { await lstat(resolve(workspace, targetName)); throw new Error(`Patch move target already exists: ${targetName}`) }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error }
       }
-      if (filePatch.newFileName === "/dev/null" || filePatch.isDelete) {
-        const updated = applyUnifiedPatch(source, filePatch, { fuzzFactor: 0 })
-        if (updated === false || updated !== "") throw new Error(`Patch did not delete the expected file content: ${targetName}`)
-        changes.push({ path: target.path, content: null })
-      } else {
-        const updated = applyUnifiedPatch(source, filePatch, { fuzzFactor: 0 })
-        if (updated === false) throw new Error(`Patch did not apply cleanly to ${targetName}`)
-        changes.push({ path: target.path, content: updated })
-      }
+
+      const content = operation.kind === "delete" ? null : operation.kind === "add" ? operation.content : applyOpenCodeUpdate(source, operation.chunks, operation.path)
+      changes.push({ ...(operation.kind === "move" ? { sourcePath: target.path } : {}), targetPath: targetName === operation.path ? target.path : targetResolved.path, content })
     }
+
+    // All paths and source contents are validated before the first mutation.
     for (const change of changes) {
-      if (change.content === null) await unlink(change.path)
-      else await this.writeTextFile(change.path, change.content)
+      if (change.sourcePath) await unlink(change.sourcePath)
+      if (change.content !== null) await this.writeTextFile(change.targetPath, change.content)
+      else if (!change.sourcePath) await unlink(change.targetPath)
     }
-    return `Patch applied to ${[...new Set(paths)].join(", ")}`
+    return `Patch applied to ${paths.join(", ")}`
   }
 
   validatePatch(patch: string): string[] {
-    if (Buffer.byteLength(patch, "utf8") > 1_000_000) throw new Error("Patch exceeds the 1 MB limit")
-    if (!patch.includes("diff --git") && !patch.startsWith("--- ")) throw new Error("Expected a unified diff")
-    const paths = [...patch.matchAll(/^(?:\+\+\+|---) (?:[ab]\/)?(.+)$/gm)].map((match) => (match[1] ?? "").trim()).filter((path) => path !== "/dev/null")
+    const operations = parseOpenCodePatch(patch)
+    const touched = new Set<string>()
+    const paths = operations.flatMap((operation) => [operation.path, operation.destination].filter((path): path is string => path !== undefined))
     if (!paths.length) throw new Error("Patch does not identify any target files")
     for (const path of paths) {
+      if (!path || path.includes("\0")) throw new Error("Patch contains an invalid empty or NUL path")
       if (path.startsWith("/") || path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path) || path.split(/[\\/]/).includes("..")) throw new Error(`Patch path escapes workspace: ${path}`)
+      if (touched.has(path)) throw new Error(`Patch contains conflicting operations for ${path}`)
+      touched.add(path)
+    }
+    for (const operation of operations) {
+      if (operation.destination === operation.path) throw new Error(`Patch move target must differ from its source: ${operation.path}`)
     }
     return [...new Set(paths)]
   }
@@ -374,6 +384,114 @@ function isWithin(root: string, target: string) {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))
 }
 
+type PatchChunkLine = { kind: "context" | "remove" | "add"; text: string }
+type PatchChunk = { lines: PatchChunkLine[]; endOfFile?: boolean }
+type PatchOperation =
+  | { kind: "add"; path: string; destination?: string; content: string }
+  | { kind: "delete"; path: string; destination?: string }
+  | { kind: "update" | "move"; path: string; destination?: string; chunks: PatchChunk[] }
+
+function parseOpenCodePatch(patch: string): PatchOperation[] {
+  const lines = patch.replace(/\r\n/g, "\n").split("\n")
+  if (lines[0] !== "*** Begin Patch") throw new Error("Expected an OpenCode patch beginning with *** Begin Patch")
+  const operations: PatchOperation[] = []
+  let index = 1
+  while (index < lines.length && lines[index] !== "*** End Patch") {
+    const header = lines[index++] ?? ""
+    const add = header.match(/^\*\*\* Add File: (.+)$/)
+    const update = header.match(/^\*\*\* Update File: (.+)$/)
+    const remove = header.match(/^\*\*\* Delete File: (.+)$/)
+    if (add) {
+      const path = normalizePatchPath(add[1]!)
+      const contentLines: string[] = []
+      while (index < lines.length && !lines[index]!.startsWith("*** ")) {
+        const line = lines[index++]!
+        if (!line.startsWith("+")) throw new Error(`Added file lines must start with +: ${path}`)
+        contentLines.push(line.slice(1))
+      }
+      operations.push({ kind: "add", path, content: contentLines.length ? `${contentLines.join("\n")}\n` : "" })
+      continue
+    }
+    if (remove) {
+      operations.push({ kind: "delete", path: normalizePatchPath(remove[1]!) })
+      continue
+    }
+    if (update) {
+      const path = normalizePatchPath(update[1]!)
+      let destination: string | undefined
+      if (lines[index]?.startsWith("*** Move to: ")) destination = normalizePatchPath(lines[index++]!.slice("*** Move to: ".length))
+      const chunks: PatchChunk[] = []
+      let chunk: PatchChunkLine[] = []
+      let endOfFile = false
+      while (index < lines.length && (!lines[index]!.startsWith("*** ") || lines[index] === "*** End of File")) {
+        const line = lines[index++]!
+        if (line === "*** End of File") {
+          endOfFile = true
+        } else if (line.startsWith("@@")) {
+          if (chunk.length) chunks.push({ lines: chunk, ...(endOfFile ? { endOfFile: true } : {}) })
+          chunk = []
+          endOfFile = false
+          const context = line.slice(2).trim()
+          if (context) chunk.push({ kind: "context", text: context })
+        } else if (line.startsWith("+")) chunk.push({ kind: "add", text: line.slice(1) })
+        else if (line.startsWith("-")) chunk.push({ kind: "remove", text: line.slice(1) })
+        else if (line.startsWith(" ")) chunk.push({ kind: "context", text: line.slice(1) })
+        else throw new Error(`Invalid update patch line for ${path}`)
+      }
+      if (chunk.length) chunks.push({ lines: chunk, ...(endOfFile ? { endOfFile: true } : {}) })
+      if (!chunks.length) throw new Error(`Update patch has no hunks for ${path}`)
+      operations.push(destination ? { kind: "move", path, destination, chunks } : { kind: "update", path, chunks })
+      continue
+    }
+    throw new Error(`Invalid OpenCode patch operation: ${header}`)
+  }
+  if (lines[index] !== "*** End Patch") throw new Error("OpenCode patch is missing *** End Patch")
+  if (lines.slice(index + 1).some((line) => line.trim() !== "")) throw new Error("Unexpected content after *** End Patch")
+  return operations
+}
+
+function applyOpenCodeUpdate(source: string, chunks: PatchChunk[], path: string): string {
+  const sourceLines = source.split("\n")
+  const hadTrailingNewline = source.endsWith("\n")
+  if (hadTrailingNewline) sourceLines.pop()
+  const result: string[] = []
+  let cursor = 0
+
+  for (const patchChunk of chunks) {
+    const chunk = patchChunk.lines
+    const oldLines = chunk.filter((line) => line.kind !== "add").map((line) => line.text)
+    let start = cursor
+    if (oldLines.length) {
+      start = findLineSequence(sourceLines, oldLines, cursor, patchChunk.endOfFile)
+      if (start < 0) throw new Error(`Patch context did not match ${path}`)
+      result.push(...sourceLines.slice(cursor, start))
+    }
+    let sourceIndex = start
+    for (const line of chunk) {
+      if (line.kind === "add") result.push(line.text)
+      else {
+        if (sourceLines[sourceIndex] !== line.text) throw new Error(`Patch context did not match ${path}`)
+        if (line.kind === "context") result.push(line.text)
+        sourceIndex += 1
+      }
+    }
+    cursor = sourceIndex
+  }
+  result.push(...sourceLines.slice(cursor))
+  return `${result.join("\n")}${hadTrailingNewline ? "\n" : ""}`
+}
+
+function findLineSequence(source: string[], expected: string[], from: number, fromEnd = false): number {
+  if (fromEnd) {
+    const start = source.length - expected.length
+    return start >= from && expected.every((line, offset) => source[start + offset] === line) ? start : -1
+  }
+  for (let start = from; start <= source.length - expected.length; start += 1) {
+    if (expected.every((line, offset) => source[start + offset] === line)) return start
+  }
+  return -1
+}
+
 function normalizePatchPath(path: string) {
-  return path.replace(/^[ab]\//, "").replaceAll("\\", "/")
+  return path.trim().replaceAll("\\", "/")
 }
