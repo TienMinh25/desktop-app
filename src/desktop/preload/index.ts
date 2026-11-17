@@ -4,6 +4,7 @@ import type { HarnessEvent } from "../../contracts/events"
 import type { McpConnectorItem, McpListServersParams, McpListServersResponse } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
+import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 
 contextBridge.exposeInMainWorld("desktop", {
@@ -12,6 +13,16 @@ contextBridge.exposeInMainWorld("desktop", {
   closeWindow: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
   selectFolder: (): Promise<{ name: string; path: string } | null> =>
     ipcRenderer.invoke(IPC_CHANNELS.SELECT_FOLDER),
+  getAuthState: (): Promise<AuthState> => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_STATE),
+  login: (username: string, password: string): Promise<AuthState> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, { username, password }),
+  logout: (): Promise<{ remoteLogoutSucceeded: boolean }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT),
+  subscribeAuthState: (listener: (state: AuthState) => void): (() => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, state: AuthState) => listener(state)
+    ipcRenderer.on(IPC_CHANNELS.AUTH_STATE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.AUTH_STATE, handler)
+  },
   listMcpServers: (params?: McpListServersParams): Promise<McpListServersResponse> =>
     ipcRenderer.invoke(IPC_CHANNELS.MCP_LIST_SERVERS, params),
   getMcpServerVersion: (serverName: string, version?: string): Promise<McpConnectorItem> =>

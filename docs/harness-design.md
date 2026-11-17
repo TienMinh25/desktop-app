@@ -7,7 +7,8 @@ Tài liệu này mô tả implementation hiện tại, phân biệt phần đã 
 - Electron quản lý cửa sổ, hộp thoại và kênh truyền dữ liệu giữa desktop với harness.
 - Renderer chỉ dùng API giới hạn do preload cung cấp.
 - Một Electron utility process riêng xử lý yêu cầu model, agent loop, tool registry, permission và lịch sử phiên trong bộ nhớ.
-- Thiết kế chat backend sau này: gọi API chat chuẩn chung của công ty, request body tương thích OpenAI Chat Completions và xác thực bằng access token trong header `Authorization: Bearer <access_token>`. Login và credential flow chưa được triển khai; hợp đồng sản phẩm không dùng API key tĩnh.
+- Backend auth/chat hiện dùng `BACKEND_HOST`; `BackendHttpClient` gửi chat `POST /api/v1/chat/responses` cùng Bearer access token do Electron main quản lý, đồng thời cung cấp JSON methods cho API backend. `McpRegistryClient` dùng `PublicHttpClient` để gọi registry công khai không token.
+- App-owned environment được validate bằng Zod trong `src/infrastructure/config/environment.ts`: hàm `validate()` gọi validator riêng từng field, main và harness gọi một lần ở composition root rồi inject config đã kiểm tra vào service. `MCP_SERVERS` và `HARNESS_PERMISSION_RULES` vẫn là harness runtime env riêng, đọc ở harness entrypoint và không nằm trong `EnvConfig`/`.env.example`. `PATH`, `HOME` cùng các biến host khác được đọc để truyền đúng môi trường cho child process.
 - Việc lưu hội thoại nằm sau một interface. Hiện dữ liệu chỉ ở trong bộ nhớ; SQLite chờ schema do chủ dự án cung cấp.
 
 ## Luồng process và message
@@ -26,14 +27,14 @@ Harness utility process
   ├─ InMemoryConversationStore
   ├─ HarnessRuntime → AgentLoop → ToolRegistry → PermissionManager
   │                                      └→ tool executor → ExecutionEnvironment
-  └─ OpenAIChatClient ── HTTP/SSE + Authorization: Bearer <access_token> (sau khi auth được nối) ──► API chat chuẩn của backend công ty
+  └─ BackendHttpClient ── HTTP/SSE + Authorization: Bearer <access_token> ──► BACKEND_HOST/api/v1/chat/responses
 ```
 
-### Hợp đồng API chat dự kiến sau khi nối auth
+### Backend API và auth hiện tại
 
-Khi phần auth được triển khai, ứng dụng sẽ gọi một API chat chuẩn chung do backend công ty cung cấp; các model được chọn bằng trường `model` trong request theo schema tương thích OpenAI Chat Completions. Mỗi request sẽ mang access token còn hiệu lực trong header `Authorization: Bearer <access_token>`. Token sẽ do auth flow cung cấp qua credential interface trong process tin cậy; không hard-code, không đóng gói vào build và không dùng API key tĩnh. Auth flow sẽ chịu trách nhiệm refresh token hoặc yêu cầu đăng nhập lại khi token hết hạn. Hiện tại chưa có login, cấp/refresh access token hoặc gắn token vào chat request.
+Chat chạy qua `BackendHttpClient` và dùng route cố định `/api/v1/chat/responses` trên `BACKEND_HOST`. Body và parser SSE hiện tại vẫn theo wire format Responses-compatible. Token chỉ được lấy từ Electron main qua RPC, gửi dưới dạng Bearer, refresh một lần sau `401`, rồi retry request một lần. JSON backend APIs dùng cùng `BackendHttpClient`; MCP Registry dùng `PublicHttpClient` không token. Không cấu hình host chat riêng.
 
-Trong code hiện tại có chênh lệch với hợp đồng dự kiến này: `OpenAIChatConfig` vẫn có trường `apiKey`, `OpenAIChatClient` dùng nó làm Bearer token, và `harness-server` đọc `CHAT_API_KEY`. Đây là wiring prototype chưa được nối auth, không phải cách xác thực sản phẩm; cần bỏ và thay bằng access token từ auth flow khi triển khai đăng nhập/backend thật.
+`BACKEND_HOST` là nguồn duy nhất cho host backend; chat không có host override riêng hoặc static access token.
 
 ### “Message port” ở đây có nghĩa gì?
 
@@ -49,7 +50,7 @@ Code hiện tại **không** tạo hoặc chuyển một `MessagePort`. Nó dùn
 
 `HarnessCommandSchema` dùng Zod để kiểm tra dữ liệu runtime tại IPC boundary; các kiểu TypeScript được suy ra từ schema bằng `z.infer`. Schema là nguồn định nghĩa duy nhất cho discriminant, enum, giới hạn chuỗi và các field được phép. Event kế thừa `BaseEvent` (`requestId`) hoặc `SessionEvent` (`requestId`, `sessionId`); handler UI dùng `switch` cùng `assertNever` để compiler báo khi union có event mới nhưng chưa được xử lý.
 
-`HARNESS_COMMAND_TYPES` và `HARNESS_EVENT_TYPES` ở `contracts/message-types.ts` là constants dùng chung cho Zod schemas, định nghĩa event, message dispatch, event emit và UI handlers. File constants được giữ riêng để renderer có thể import discriminant mà không kéo Zod vào bundle UI. Trong composition root, `createChatModel(modelName)` là factory tạo `ChatModel` adapter cho model được chọn; hiện nó tạo `OpenAIChatClient` từ endpoint cấu hình. `ensureMcpToolsRegistered(workspacePath)` chạy trước model request đầu tiên để kết nối các MCP server, khám phá schema tool rồi đăng ký chúng vào registry để model nhận được danh sách tool.
+`HARNESS_COMMAND_TYPES` và `HARNESS_EVENT_TYPES` ở `contracts/message-types.ts` là constants dùng chung cho Zod schemas, định nghĩa event, message dispatch, event emit và UI handlers. File constants được giữ riêng để renderer có thể import discriminant mà không kéo Zod vào bundle UI. Trong composition root, `createChatModel(modelName)` là factory tạo `ChatModel` adapter cho model được chọn; hiện nó tạo `ChatClient` cùng một `BackendHttpClient` riêng cho lượt chạy đó. `ensureMcpToolsRegistered(workspacePath)` chạy trước model request đầu tiên để kết nối các MCP server, khám phá schema tool rồi đăng ký chúng vào registry để model nhận được danh sách tool.
 
 Runtime giữ FIFO queue tường minh cho từng session và phát event `chat.queued`/`chat.started`, để renderer hiển thị đúng prompt đang chạy và danh sách chờ. Queue của session khác vẫn chạy độc lập. Runtime cache một `AgentLoop` coordinator theo session, tạo lười ở prompt đầu tiên; mỗi lần chạy nhận `ChatModel` mới theo prompt. Vì vậy coordinator không giữ ChatClient hay dispatcher HTTP khi session idle. Khi session bị xóa, prompt pending bị loại bỏ, prompt đang chạy được phép kết thúc, rồi cache agent và todo của session được giải phóng.
 
@@ -59,7 +60,7 @@ MCP initialization hiện chỉ diễn ra một lần trong suốt vòng đời 
 
 Sandbox của Chromium renderer tách biệt với sandbox thực thi của harness. `BrowserWindow` đặt `contextIsolation: true` và `nodeIntegration: false`; từ Electron 20, renderer mặc định đã được sandbox, dù ứng dụng không đặt rõ `sandbox: true`. Cấu hình này giới hạn renderer truy cập API Node/Electron và buộc UI đi qua preload bridge hẹp. Nó **không** sandbox utility process: tool và shell command đã được cho phép vẫn chạy với quyền OS của người dùng desktop. [Sandbox process của Electron](https://www.electronjs.org/docs/latest/tutorial/sandbox)
 
-Việc cần rà soát thêm về bảo mật Electron: main process hiện kiểm tra IPC có đến từ `BrowserWindow` của ứng dụng và xác thực payload theo type, nhưng chưa chặn điều hướng renderer hoặc tạo popup; HTML của renderer cũng chưa có Content Security Policy. Ứng dụng hiện chỉ tải renderer local hoặc dev server. Trước khi thêm nội dung remote hoặc không đáng tin cậy, cần giới hạn `will-navigate` và `setWindowOpenHandler`, xác thực sender frame/origin cho IPC, và đặt CSP phù hợp theo môi trường. Xem [danh sách kiểm tra bảo mật của Electron](https://www.electronjs.org/docs/latest/tutorial/security/).
+Việc cần rà soát thêm về bảo mật Electron: auth IPC kiểm tra `BrowserWindow`, main frame và origin của renderer; các IPC khác mới chỉ kiểm tra `BrowserWindow`. Main process chưa chặn điều hướng renderer hoặc tạo popup; HTML của renderer cũng chưa có Content Security Policy. Ứng dụng hiện chỉ tải renderer local hoặc dev server. Trước khi thêm nội dung remote hoặc không đáng tin cậy, cần giới hạn `will-navigate` và `setWindowOpenHandler`, áp dụng kiểm tra frame/origin cho các IPC khác, và đặt CSP phù hợp theo môi trường. Xem [danh sách kiểm tra bảo mật của Electron](https://www.electronjs.org/docs/latest/tutorial/security/).
 
 ## Luồng permission
 

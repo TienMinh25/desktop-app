@@ -74,7 +74,5 @@ export interface ChatModel {
 }
 
 export interface ChatClientConfig {
-  endpoint: string
   model: string
-  accessToken: string
 }

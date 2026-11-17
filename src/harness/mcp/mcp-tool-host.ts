@@ -1,14 +1,13 @@
 import type { HarnessTool, ToolContext } from "../agent/tool-registry"
+import { McpServerConfigListSchema, type McpServerConfig } from "../../contracts/mcp-server-config"
 import { permissionRequest } from "../tools/tool-utils"
 import { McpStdioClient } from "./mcp-stdio-client"
-
-interface McpServerConfig { name: string; command: string; args?: string[]; env?: Record<string, string>; cwd?: string }
 
 export class McpToolHost {
   private readonly clients: McpStdioClient[] = []
   private initialized?: Promise<HarnessTool[]>
 
-  constructor(private readonly serializedConfig: string | undefined) {}
+  constructor(private readonly configuredServers: readonly McpServerConfig[] | string | undefined) {}
 
   tools(workspacePath: string): Promise<HarnessTool[]> {
     if (!this.initialized) this.initialized = this.connectConfiguredServers(workspacePath)
@@ -18,13 +17,11 @@ export class McpToolHost {
   close() { for (const client of this.clients) client.close() }
 
   private async connectConfiguredServers(workspacePath: string): Promise<HarnessTool[]> {
-    if (!this.serializedConfig) return []
-    const configs = JSON.parse(this.serializedConfig) as unknown
-    if (!Array.isArray(configs)) throw new Error("MCP_SERVERS must be a JSON array")
+    const configs = this.parseConfiguredServers()
+    if (configs.length === 0) return []
     const output: HarnessTool[] = []
     const serverNames = new Set<string>()
-    try { for (const raw of configs) {
-      const config = validateConfig(raw)
+    try { for (const config of configs) {
       if (serverNames.has(config.name)) throw new Error(`Duplicate MCP server name: ${config.name}`)
       serverNames.add(config.name)
       const env: NodeJS.ProcessEnv = {}
@@ -65,6 +62,20 @@ export class McpToolHost {
     }
     return output
   }
+
+  private parseConfiguredServers(): readonly McpServerConfig[] {
+    if (!this.configuredServers) return []
+    if (typeof this.configuredServers !== "string") return this.configuredServers
+    let raw: unknown
+    try {
+      raw = JSON.parse(this.configuredServers)
+    } catch {
+      throw new Error("MCP_SERVERS must be a valid JSON array")
+    }
+    const parsed = McpServerConfigListSchema.safeParse(raw)
+    if (!parsed.success) throw new Error(`Invalid MCP_SERVERS: ${parsed.error.issues[0]?.message ?? "invalid server entry"}`)
+    return parsed.data
+  }
 }
 
 function boundedSchema(schema: Record<string, unknown>, serverName: string, toolName: string) {
@@ -73,35 +84,6 @@ function boundedSchema(schema: Record<string, unknown>, serverName: string, tool
   return schema
 }
 
-function validateConfig(value: unknown): McpServerConfig {
-  if (!isRecord(value)) throw new Error("Each MCP server config must be an object")
-  const name = value.name
-  const command = value.command
-  if (typeof name !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(name)) throw new Error("MCP server name must use 1-32 letters, numbers, _ or -")
-  if (typeof command !== "string" || !command) throw new Error(`MCP server ${name} requires a command`)
-  const args = value.args
-  if (args !== undefined && !isStringArray(args)) throw new Error(`MCP server ${name} args must be strings`)
-  const env = value.env
-  if (env !== undefined && !isStringRecord(env)) throw new Error(`MCP server ${name} env must map strings to strings`)
-  const cwd = value.cwd
-  if (cwd !== undefined && typeof cwd !== "string") throw new Error(`MCP server ${name} cwd must be a string`)
-  return {
-    name,
-    command,
-    ...(args === undefined ? {} : { args }),
-    ...(env === undefined ? {} : { env }),
-    ...(cwd === undefined ? {} : { cwd }),
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return isRecord(value) && Object.values(value).every((item): item is string => typeof item === "string")
 }

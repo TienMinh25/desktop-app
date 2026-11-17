@@ -3,8 +3,7 @@ import type {
   McpListServersParams,
   McpListServersResponse,
 } from "../../contracts/mcp-registry"
-import { API_CONFIG } from "../../infrastructure/config/api-config"
-import { HttpClient } from "../../infrastructure/http/http-client"
+import { PublicHttpClient } from "../../infrastructure/http/public-http-client"
 import { normalizeMcpServerEntry, parseMcpListServersPayload } from "./mcp-registry-mapper"
 import type { McpRegistryClientConfig, McpRegistryListRawPayload } from "./types"
 
@@ -13,11 +12,11 @@ export class McpRegistryClient {
   private readonly apiVersion: string
 
   constructor(
-    config: McpRegistryClientConfig = {},
-    private readonly httpClient: HttpClient = new HttpClient(),
+    config: McpRegistryClientConfig,
+    private readonly httpClient: PublicHttpClient = new PublicHttpClient(),
   ) {
-    this.baseUrl = (config.baseUrl ?? API_CONFIG.MCP_REGISTRY_BASE_URL).replace(/\/+$/, "")
-    this.apiVersion = config.apiVersion ?? API_CONFIG.MCP_REGISTRY_API_VERSION
+    this.baseUrl = config.baseUrl.replace(/\/+$/, "")
+    this.apiVersion = config.apiVersion
   }
 
   private buildListServersUrl(params: McpListServersParams): string {

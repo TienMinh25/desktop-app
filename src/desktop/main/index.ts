@@ -11,20 +11,97 @@ import { isHarnessCommand } from "../../contracts/guards"
 import type { McpListServersParams } from "../../contracts/mcp-registry"
 import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerConfig, LspSettings } from "../../contracts/lsp"
+import { AuthCredentialsSchema, AuthRpcRequestSchema, type AuthRpcRequest, type AuthRpcResponse, type AuthState } from "../../contracts/auth"
 import { McpRegistryClient } from "../../domain/mcp-registry/mcp-registry-client"
+import { validate } from "../../infrastructure/config/environment"
 import { LSP_SERVER_CATALOG } from "../../domain/lsp/lsp-registry"
 import { LspSettingsStore } from "./lsp-settings-store"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
+import { AuthService, AuthServiceError } from "./auth-service"
+import { AuthSessionStore } from "./auth-session-store"
 
 const { autoUpdater } = electronUpdater
 
 let harnessProcess: UtilityProcess | null = null
 let lspSettingsStore: LspSettingsStore | null = null
-const mcpRegistryClient = new McpRegistryClient()
+let authService: AuthService | null = null
+const envConfig = validate(process.env)
+const mcpRegistryClient = new McpRegistryClient({
+    baseUrl: envConfig.MCP_REGISTRY_BASE_URL,
+    apiVersion: envConfig.MCP_REGISTRY_API_VERSION,
+})
 
 function getLspSettingsStore(): LspSettingsStore {
     if (!lspSettingsStore) throw new Error("LSP settings are not ready")
     return lspSettingsStore
+}
+
+function getAuthService(): AuthService {
+    if (!authService) throw new Error("Authentication service is not ready")
+    return authService
+}
+
+function isTrustedAuthSender(event: Electron.IpcMainInvokeEvent): boolean {
+    if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
+    if (process.env.ELECTRON_RENDERER_URL) {
+        try {
+            return new URL(event.senderFrame.url).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin
+        } catch {
+            return false
+        }
+    }
+    return event.senderFrame.url === new URL("../renderer/index.html", import.meta.url).href
+}
+
+function broadcastAuthState(state: AuthState) {
+    for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.AUTH_STATE, state)
+    }
+}
+
+async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown) {
+    const parsed = AuthRpcRequestSchema.safeParse(value)
+    if (!parsed.success) return false
+    const request: AuthRpcRequest = parsed.data
+    try {
+        let response: AuthRpcResponse
+        switch (request.type) {
+            case "auth.rpc.get-access-token":
+                response = {
+                    type: "auth.rpc.access-token",
+                    requestId: request.requestId,
+                    accessToken: await getAuthService().getAccessToken(),
+                }
+                break
+            case "auth.rpc.refresh":
+                response = {
+                    type: "auth.rpc.access-token",
+                    requestId: request.requestId,
+                    accessToken: await getAuthService().refreshAccessToken(),
+                }
+                break
+            case "auth.rpc.expire-session":
+                await getAuthService().expireSession()
+                response = { type: "auth.rpc.result", requestId: request.requestId }
+                break
+            default:
+                return assertNever(request)
+        }
+        process.postMessage(response)
+    } catch (error) {
+        if (error instanceof AuthServiceError && error.code === "unauthenticated") {
+            broadcastAuthState({ authenticated: false, username: null })
+        }
+        process.postMessage({
+            type: "auth.rpc.error",
+            requestId: request.requestId,
+            code: error instanceof AuthServiceError && error.code === "unauthenticated"
+                ? "unauthenticated"
+                : "request-failed",
+            message: error instanceof Error ? error.message : "Authentication request failed",
+        } satisfies AuthRpcResponse)
+    }
+    return true
 }
 
 function broadcastUpdaterState(state: AppUpdaterState) {
@@ -81,9 +158,13 @@ function startHarnessProcess(): UtilityProcess {
         serviceName: "Ccodex Harness",
     })
     harnessProcess = process
-    process.on("message", (event: HarnessEvent) => {
+    process.on("message", (event: unknown) => {
+        if (AuthRpcRequestSchema.safeParse(event).success) {
+            void handleHarnessAuthRequest(process, event)
+            return
+        }
         for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event)
+            window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event as HarnessEvent)
         }
     })
     process.on("exit", () => {
@@ -198,6 +279,22 @@ ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (event) => {
         path: folderPath,
     }
 })
+ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, async (event) => {
+    if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
+    return await getAuthService().getAuthState()
+})
+ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknown) => {
+    if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
+    const parsed = AuthCredentialsSchema.safeParse(value)
+    if (!parsed.success) throw new Error("Username and password are required")
+    const state = await getAuthService().login(parsed.data.username, parsed.data.password)
+    broadcastAuthState(state)
+    return state
+})
+ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
+    if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
+    return await getAuthService().logout()
+})
 ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
     return await mcpRegistryClient.listServers(params ?? {})
 })
@@ -261,8 +358,14 @@ ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
 })
 
 app.whenReady().then(async () => {
-    await mkdir(join(app.getPath("home"), ".ccodex"), { recursive: true })
-    lspSettingsStore = new LspSettingsStore(join(app.getPath("home"), ".ccodex"))
+    const ccodexDirectory = join(app.getPath("home"), ".ccodex")
+    await mkdir(ccodexDirectory, { recursive: true })
+    lspSettingsStore = new LspSettingsStore(ccodexDirectory, process.env, process.platform, app.getPath("home"))
+    authService = new AuthService(
+        new AuthSessionStore(ccodexDirectory),
+        () => broadcastAuthState({ authenticated: false, username: null }),
+        envConfig.BACKEND_HOST,
+    )
     setupAutoUpdater()
     await ensureHarnessProcess()
     createWindow()
@@ -279,3 +382,7 @@ app.on("window-all-closed", () => {
     }
 })
 app.on("before-quit", stopHarnessProcess)
+
+function assertNever(value: never): never {
+    throw new Error(`Unhandled auth RPC request: ${JSON.stringify(value)}`)
+}

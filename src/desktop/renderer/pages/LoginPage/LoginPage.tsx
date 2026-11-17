@@ -1,12 +1,11 @@
 import { useState, type FormEvent } from "react"
 import cmcLogoLogin from "../../assets/cmc_global_login.jpg"
 import { APP_CONFIG } from "../../constants"
-import { DEMO_ACCOUNTS } from "../../data/mockData"
 import { TermsModal } from "./components/TermsModal"
 import styles from "./LoginPage.module.scss"
 
 interface LoginPageProps {
-  onLoginSuccess: (username: string, assignedProjects: string[]) => void
+  onLoginSuccess: (username: string) => void
 }
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
@@ -14,33 +13,40 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingUser, setPendingUser] = useState<{
     username: string
-    projects: string[]
+    password: string
   } | null>(null)
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     const trimmedUser = username.trim()
-    const account = DEMO_ACCOUNTS[trimmedUser]
-
-    if (account && account.password === password) {
-      setErrorMessage(null)
-      setPendingUser({ username: trimmedUser, projects: [...account.projects] })
-    } else {
-      setErrorMessage("Invalid username or password. Please try again.")
-    }
+    if (!trimmedUser || !password) return
+    setErrorMessage(null)
+    setPendingUser({ username: trimmedUser, password })
   }
 
-  const handleAgreeTerms = () => {
-    if (!pendingUser) return
-    const { username: confirmedUser, projects } = pendingUser
+  const handleAgreeTerms = async () => {
+    if (!pendingUser || isSubmitting) return
+    const { username: confirmedUser, password: confirmedPassword } = pendingUser
     setPendingUser(null)
-    onLoginSuccess(confirmedUser, projects)
+    setIsSubmitting(true)
+    try {
+      await window.desktop.login(confirmedUser, confirmedPassword)
+      setPassword("")
+      onLoginSuccess(confirmedUser)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Sign in failed. Please try again.")
+      setPassword("")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleDisagreeTerms = () => {
     setPendingUser(null)
+    setPassword("")
     setErrorMessage(
       "You must agree to the Terms of Use and Privacy Policy to access C-CodeX Assistant.",
     )
@@ -219,8 +225,8 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <span className={styles.poaNote}>Authenticated via POA</span>
             </div>
 
-            <button type="submit" className={styles.submitBtn}>
-              Sign in with CMC Account
+            <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>
+              {isSubmitting ? "Signing in…" : "Sign in with CMC Account"}
             </button>
           </form>
 

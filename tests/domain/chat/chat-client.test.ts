@@ -1,14 +1,14 @@
 import { expect, it } from "bun:test"
 import { Headers, Response } from "undici"
 import type { Response as UndiciResponse } from "undici-types"
-import type { UndiciFetch } from "../../../src/infrastructure/http/http-client"
+import type { PublicHttpFetch } from "../../../src/infrastructure/http/public-http-client"
 import { ChatClient } from "../../../src/domain/chat/chat-client"
 
 function sseResponse(...events: string[]): UndiciResponse {
   return new Response(events.join(""), { status: 200, headers: { "content-type": "text/event-stream" } })
 }
 
-function fetchStub(handler: UndiciFetch): UndiciFetch {
+function fetchStub(handler: PublicHttpFetch): PublicHttpFetch {
   return handler
 }
 
