@@ -21,8 +21,9 @@ import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
 import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
-import { createSession, dbPath, deleteSession, listProjects, listSessions, openDb, renameSession, searchSessions, syncProjects, type Db } from "./db"
-import { fetchProjects, userIdFromJwt } from "./projects"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSessions, syncProjects } from "./project-session-store"
+import { ccodexDbPath, openDb, type Db } from "../../infrastructure/db/sqlite"
+import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
 
 getSystemDispatcher()
@@ -111,21 +112,15 @@ async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown)
     return true
 }
 
-let db: { owner: string; handle: Db } | null = null
+let db: Db | null = null
 let projectsHttp: BackendHttpClient | null = null
 
-// Reopen when the signed-in account changes so one account never writes into another's DB
-async function getDb(): Promise<Db> {
-    const owner = userIdFromJwt(await getAuthService().getAccessToken())
-    if (db?.owner !== owner) {
-        closeDb()
-        db = { owner, handle: openDb(dbPath(app.getPath("userData"), owner)) }
-    }
-    return db.handle
+function getDb(): Db {
+    return db ??= openDb(ccodexDbPath(app.getPath("home")))
 }
 
 function closeDb() {
-    db?.handle.close()
+    db?.close()
     db = null
 }
 
@@ -135,39 +130,35 @@ function requireTrustedSender(event: Electron.IpcMainInvokeEvent) {
 
 ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
     requireTrustedSender(event)
-    const database = await getDb()
     projectsHttp ??= new BackendHttpClient(envConfig.BACKEND_HOST, getAuthService())
     let error: string | null = null
     try {
-        const projects = await fetchProjects(projectsHttp)
-        // The account can change while the request waits, never write into another account's DB
-        if (db?.handle !== database) throw new Error("Signed-in account changed")
-        syncProjects(database, projects)
+        syncProjects(getDb(), await fetchProjects(projectsHttp))
     } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause)
     }
-    return { projects: listProjects(database), error } satisfies ProjectsListResult
+    return { projects: listProjects(getDb()), error } satisfies ProjectsListResult
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
     requireTrustedSender(event)
-    return listSessions(await getDb(), requireText(projectId, "projectId"))
+    return listSessions(getDb(), requireText(projectId, "projectId"))
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_SEARCH, async (event, query: unknown) => {
     requireTrustedSender(event)
     if (typeof query !== "string") throw new Error("query must be a string")
-    return searchSessions(await getDb(), query.trim())
+    return searchSessions(getDb(), query.trim())
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
     requireTrustedSender(event)
-    return createSession(await getDb(), requireText(projectId, "projectId"), app.getPath("home"), requireText(title, "title"))
+    return createSession(getDb(), requireText(projectId, "projectId"), app.getPath("home"), requireText(title, "title"))
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, title: unknown) => {
     requireTrustedSender(event)
-    renameSession(await getDb(), requireText(sessionId, "sessionId"), requireText(title, "title"))
+    renameSession(getDb(), requireText(sessionId, "sessionId"), requireText(title, "title"))
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
     requireTrustedSender(event)
-    deleteSession(await getDb(), requireText(sessionId, "sessionId"))
+    deleteSession(getDb(), requireText(sessionId, "sessionId"))
 })
 
 // Renderer input is untrusted, reject empty values before writing
@@ -371,7 +362,6 @@ ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknown) => {
 })
 ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
-    closeDb()
     return await getAuthService().logout()
 })
 ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
@@ -442,10 +432,7 @@ app.whenReady().then(async () => {
     lspSettingsStore = new LspSettingsStore(ccodexDirectory, process.env, process.platform, app.getPath("home"))
     authService = new AuthService(
         new AuthSessionStore(ccodexDirectory),
-        () => {
-            closeDb()
-            broadcastAuthState({ authenticated: false, username: null })
-        },
+        () => broadcastAuthState({ authenticated: false, username: null }),
         envConfig.BACKEND_HOST,
     )
     setupAutoUpdater()

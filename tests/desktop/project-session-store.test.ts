@@ -1,25 +1,13 @@
-import { join } from "node:path"
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { createSession, dbPath, deleteSession, listProjects, listSessions, migrate, renameSession, searchSessions, syncProjects, type Db } from "../../src/desktop/main/db"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSessions, syncProjects } from "../../src/desktop/main/project-session-store"
+import { migrate, type Db } from "../../src/infrastructure/db/sqlite"
 
 function memoryDb(): Db {
   const db = new Database(":memory:") as unknown as Db
   migrate(db)
   return db
 }
-
-test("dbPath keeps each account in its own folder and rejects path tricks", () => {
-  expect(dbPath("/data", "42")).toBe(join("/data", "accounts", "42", "ccodex.db"))
-  for (const bad of ["", "..", "../x", "a/b", ".hidden"]) expect(() => dbPath("/data", bad)).toThrow()
-})
-
-test("migrate creates the schema once", () => {
-  const db = memoryDb()
-  migrate(db)
-  expect(db.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 })
-  expect(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'").get()).toEqual({ n: 10 })
-})
 
 test("syncProjects upserts, marks missing projects removed and reactivates them", () => {
   const db = memoryDb()

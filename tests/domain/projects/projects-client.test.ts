@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { Headers, Response } from "undici"
-import { BackendHttpClient } from "../../src/infrastructure/http/backend-http-client"
-import { fetchProjects, userIdFromJwt } from "../../src/desktop/main/projects"
+import { BackendHttpClient } from "../../../src/infrastructure/http/backend-http-client"
+import { fetchProjects } from "../../../src/domain/projects/projects-client"
 
 const tokenProvider = {
   async getAccessToken() { return "login-token" },
@@ -18,9 +18,3 @@ test("fetchProjects sends the login token and maps the desktop project list", as
   expect(await fetchProjects(http)).toEqual([{ id: "7", name: "CRM" }])
   expect(seen).toEqual([{ url: "https://company.test/api/v2/projects?source=desktop-app", authorization: "Bearer login-token" }])
 }, 30_000) // BackendHttpClient reads the Windows cert store via PowerShell on first use
-
-test("userIdFromJwt reads the numeric sub claim and rejects anything else", () => {
-  const jwt = (payload: object) => `h.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.s`
-  expect(userIdFromJwt(jwt({ sub: "42" }))).toBe("42")
-  for (const bad of [jwt({ sub: "../x" }), jwt({}), "not-a-jwt"]) expect(() => userIdFromJwt(bad)).toThrow()
-})

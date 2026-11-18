@@ -1,18 +1,12 @@
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
-import { dbPath, migrate, syncProjects, type Db } from "../src/desktop/main/db"
+import { dirname } from "node:path"
+import { syncProjects } from "../src/desktop/main/project-session-store"
+import { ccodexDbPath, migrate, type Db } from "../src/infrastructure/db/sqlite"
 
-// Usage: bun scripts/seed-dev-db.ts <accountId> [appName], accountId = numeric `sub` of the login token
-// appName "Electron" for bun run dev, "C-CodeX Desktop" for a build
-const accountId = process.argv[2]
-if (!accountId) throw new Error("accountId is required, it is the numeric sub claim of the access token")
-const appName = process.argv[3] ?? "Electron"
-const appData = process.platform === "win32" ? process.env.APPDATA!
-  : process.platform === "darwin" ? join(homedir(), "Library", "Application Support")
-  : join(homedir(), ".config")
-const path = dbPath(join(appData, appName), accountId)
+// Usage: bun scripts/seed-dev-db.ts [dbPath], default is the app DB in ~/.ccodex
+const path = process.argv[2] ?? ccodexDbPath(homedir())
 mkdirSync(dirname(path), { recursive: true })
 
 const db = new Database(path) as unknown as Db
