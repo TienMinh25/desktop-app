@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react"
-import type { SessionRow } from "../../main/db"
-import type { ChatSession, ProjectItem } from "../data/mockData"
+import type { SessionRow } from "../../../contracts/projects"
+
+export interface ProjectItem {
+  id: string
+  name: string
+}
+
+export interface ChatSession {
+  id: string
+  projectId: string
+  title: string
+  hasHistory: boolean
+  updatedAt: number
+}
 
 export function useProjectSessions(onError: (message: string) => void) {
   const [assignedProjects, setAssignedProjects] = useState<ProjectItem[]>([])
@@ -25,15 +37,9 @@ export function useProjectSessions(onError: (message: string) => void) {
           sessionLists[0] = [await window.desktop.createSession(active[0].id, "New chat #1")]
         }
         setLoadError(error)
-        setAssignedProjects(active.map((project) => ({ id: project.id, name: project.name, key: "", folder: "" })))
+        setAssignedProjects(active.map((project) => ({ id: project.id, name: project.name })))
         setExpandedProjects(Object.fromEntries(active.map((project) => [project.id, true])))
-        setSessions(sessionLists.flatMap((rows, index) => rows.map((row, order) => ({
-          id: row.id,
-          projectId: active[index]!.id,
-          title: row.title,
-          hasHistory: false,
-          projectOrder: order,
-        }))))
+        setSessions(sessionLists.flatMap((rows, index) => rows.map((row) => toChatSession(row, active[index]!.id))))
         setSelectedProjectId(active[0]?.id ?? null)
         setActiveSessionId(sessionLists[0]?.[0]?.id ?? null)
       } catch (cause) {
@@ -65,20 +71,7 @@ export function useProjectSessions(onError: (message: string) => void) {
     } catch (cause) {
       return reportError("create chat", cause)
     }
-    setSessions((prev) => {
-      const projectSessions = prev.filter((s) => s.projectId === projectId)
-      const minOrder = projectSessions.length
-        ? Math.min(...projectSessions.map((s) => s.projectOrder)) - 1
-        : 1
-      const newSession: ChatSession = {
-        id: row.id,
-        projectId,
-        title: row.title,
-        hasHistory: false,
-        projectOrder: minOrder,
-      }
-      return [newSession, ...prev]
-    })
+    setSessions((prev) => [toChatSession(row, projectId), ...prev])
     setActiveSessionId(row.id)
   }
 
@@ -87,12 +80,12 @@ export function useProjectSessions(onError: (message: string) => void) {
     setSelectedProjectId(projectId)
     const scoped = sessions
       .filter((s) => s.projectId === projectId)
-      .sort((a, b) => a.projectOrder - b.projectOrder)
+      .sort(newestFirst)
 
     if (scoped.length > 0 && scoped[0]) {
       setActiveSessionId(scoped[0].id)
     } else {
-      createNewChat(projectId)
+      void createNewChat(projectId)
     }
   }
 
@@ -135,7 +128,7 @@ export function useProjectSessions(onError: (message: string) => void) {
     if (sessionId === activeSessionId && selectedProjectId) {
       const next = sessions
         .filter((s) => s.id !== sessionId && s.projectId === selectedProjectId)
-        .sort((a, b) => a.projectOrder - b.projectOrder)[0]
+        .sort(newestFirst)[0]
 
       if (next) {
         setActiveSessionId((current) => (current === sessionId ? next.id : current))
@@ -164,3 +157,10 @@ export function useProjectSessions(onError: (message: string) => void) {
     deleteSession,
   }
 }
+
+// History is not loaded from the DB yet, so a reopened chat starts empty
+function toChatSession(row: SessionRow, projectId: string): ChatSession {
+  return { id: row.id, projectId, title: row.title, hasHistory: false, updatedAt: row.updatedAt }
+}
+
+export const newestFirst = (a: ChatSession, b: ChatSession) => b.updatedAt - a.updatedAt

@@ -2,28 +2,15 @@ import Database from "better-sqlite3"
 import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
+import type { ProjectRow, SearchHit, SessionRow } from "../../contracts/projects"
 
 export type Db = Database.Database
 
-export interface ProjectRow {
-  id: string
-  name: string
-  memberStatus: "active" | "removed"
-  fetchedAt: number
-}
-
-export interface SessionRow {
-  id: string
-  title: string
-  lastPreview: string | null
-  updatedAt: number
-}
-
-// One DB per account: <userData>/accounts/<ldap>/ccodex.db
-export function dbPath(userDataDir: string, ldap: string): string {
-  // Block path tricks like "../" in ldap
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(ldap)) throw new Error(`Invalid ldap: ${ldap}`)
-  return join(userDataDir, "accounts", ldap, "ccodex.db")
+// One DB per account: <userData>/accounts/<accountId>/ccodex.db
+export function dbPath(userDataDir: string, accountId: string): string {
+  // Block path tricks like "../" in accountId
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(accountId)) throw new Error(`Invalid account id: ${accountId}`)
+  return join(userDataDir, "accounts", accountId, "ccodex.db")
 }
 
 export function openDb(path: string): Db {
@@ -88,11 +75,6 @@ export function renameSession(db: Db, id: string, title: string): void {
 // Soft delete, the row stays for audit and undo
 export function deleteSession(db: Db, id: string, now = Date.now()): void {
   db.prepare("UPDATE sessions SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL").run(now, id)
-}
-
-export interface SearchHit {
-  id: string
-  snippet: string | null
 }
 
 // Match session title or text parts, snippet comes from the latest matching message

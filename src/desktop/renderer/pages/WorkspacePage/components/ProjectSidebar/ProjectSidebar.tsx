@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
-import type { ChatSession, ProjectItem } from "../../../../data/mockData"
+import { newestFirst, type ChatSession, type ProjectItem } from "../../../../hooks/useProjectSessions"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
 
@@ -173,7 +173,7 @@ export function ProjectSidebar({
             const isSelected = selectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
-              .sort((a, b) => a.projectOrder - b.projectOrder)
+              .sort(newestFirst)
               .filter((s) => !searchResult || searchResult.snippets.has(s.id))
             if (searchResult && projectSessions.length === 0) return null
 

@@ -9,8 +9,8 @@ function memoryDb(): Db {
   return db
 }
 
-test("dbPath keeps each ldap in its own folder and rejects path tricks", () => {
-  expect(dbPath("/data", "ntquynh8")).toBe(join("/data", "accounts", "ntquynh8", "ccodex.db"))
+test("dbPath keeps each account in its own folder and rejects path tricks", () => {
+  expect(dbPath("/data", "42")).toBe(join("/data", "accounts", "42", "ccodex.db"))
   for (const bad of ["", "..", "../x", "a/b", ".hidden"]) expect(() => dbPath("/data", bad)).toThrow()
 })
 

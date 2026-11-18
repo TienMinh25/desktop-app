@@ -4,13 +4,15 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { dbPath, migrate, syncProjects, type Db } from "../src/desktop/main/db"
 
-// Usage: bun scripts/seed-dev-db.ts [ldap] [appName], appName "Electron" for bun run dev, "C-CodeX Desktop" for a build
-const ldap = process.argv[2] ?? "local"
+// Usage: bun scripts/seed-dev-db.ts <accountId> [appName], accountId = numeric `sub` of the login token
+// appName "Electron" for bun run dev, "C-CodeX Desktop" for a build
+const accountId = process.argv[2]
+if (!accountId) throw new Error("accountId is required, it is the numeric sub claim of the access token")
 const appName = process.argv[3] ?? "Electron"
 const appData = process.platform === "win32" ? process.env.APPDATA!
   : process.platform === "darwin" ? join(homedir(), "Library", "Application Support")
   : join(homedir(), ".config")
-const path = dbPath(join(appData, appName), ldap)
+const path = dbPath(join(appData, appName), accountId)
 mkdirSync(dirname(path), { recursive: true })
 
 const db = new Database(path) as unknown as Db

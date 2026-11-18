@@ -1,9 +1,5 @@
-import { z } from "zod"
+import { DesktopProjectsSchema } from "../../contracts/projects"
 import type { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
-
-const DesktopProjectsSchema = z.object({
-  data: z.array(z.object({ project_id: z.number(), project_name: z.string() })),
-})
 
 // Backend puts the numeric user id in `sub`, there is no ldap claim
 export function userIdFromJwt(token: string): string {

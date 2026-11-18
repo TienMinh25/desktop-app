@@ -23,6 +23,7 @@ import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 import { createSession, dbPath, deleteSession, listProjects, listSessions, openDb, renameSession, searchSessions, syncProjects, type Db } from "./db"
 import { fetchProjects, userIdFromJwt } from "./projects"
+import type { ProjectsListResult } from "../../contracts/projects"
 
 getSystemDispatcher()
 
@@ -145,7 +146,7 @@ ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
     } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause)
     }
-    return { projects: listProjects(database), error }
+    return { projects: listProjects(database), error } satisfies ProjectsListResult
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
     requireTrustedSender(event)
