@@ -9,13 +9,21 @@ function memoryDb(): Db {
   return db
 }
 
+test("listProjects keeps the backend order", () => {
+  const db = memoryDb()
+  syncProjects(db, [{ id: "9", name: "Zeta" }, { id: "3", name: "Alpha" }])
+  expect(listProjects(db).map((p) => p.id)).toEqual(["9", "3"])
+  syncProjects(db, [{ id: "3", name: "Alpha" }, { id: "9", name: "Zeta" }])
+  expect(listProjects(db).map((p) => p.id)).toEqual(["3", "9"])
+})
+
 test("syncProjects upserts, marks missing projects removed and reactivates them", () => {
   const db = memoryDb()
   syncProjects(db, [{ id: "101", name: "Formbuilder" }, { id: "102", name: "CRM" }], 1000)
   syncProjects(db, [{ id: "101", name: "Formbuilder v2" }], 2000)
   expect(listProjects(db).map((p) => [p.id, p.name, p.memberStatus, p.fetchedAt])).toEqual([
-    ["102", "CRM", "removed", 2000],
     ["101", "Formbuilder v2", "active", 2000],
+    ["102", "CRM", "removed", 2000],
   ])
   syncProjects(db, [{ id: "101", name: "Formbuilder v2" }, { id: "102", name: "CRM" }], 3000)
   expect(listProjects(db).every((p) => p.memberStatus === "active")).toBe(true)

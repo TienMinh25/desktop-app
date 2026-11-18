@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto"
 import type { ProjectRow, SearchHit, SessionRow } from "../../contracts/projects"
 import type { Db } from "../../infrastructure/db/sqlite"
 
-// Backend list is the source of truth, missing projects become 'removed'
-// Skip on backend error (null body), otherwise every project is marked removed
+// Backend list is the source of truth for membership and order, missing projects become 'removed'
+// Call only with a successful response, an empty list marks every project removed
 export function syncProjects(db: Db, projects: Pick<ProjectRow, "id" | "name">[], now = Date.now()): void {
   const upsert = db.prepare(`
-    INSERT INTO projects (id, name, member_status, fetched_at) VALUES (?, ?, 'active', ?)
-    ON CONFLICT (id) DO UPDATE SET name = excluded.name, member_status = 'active', fetched_at = excluded.fetched_at`)
+    INSERT INTO projects (id, name, member_status, sort_order, fetched_at) VALUES (?, ?, 'active', ?, ?)
+    ON CONFLICT (id) DO UPDATE SET name = excluded.name, member_status = 'active', sort_order = excluded.sort_order, fetched_at = excluded.fetched_at`)
   const markRemoved = db.prepare(`
     UPDATE projects SET member_status = 'removed', fetched_at = ?
     WHERE member_status = 'active' AND id NOT IN (SELECT value FROM json_each(?))`)
   db.transaction(() => {
-    for (const project of projects) upsert.run(project.id, project.name, now)
+    projects.forEach((project, index) => upsert.run(project.id, project.name, index, now))
     markRemoved.run(now, JSON.stringify(projects.map((project) => project.id)))
   }).immediate()
 }
@@ -21,7 +21,7 @@ export function listProjects(db: Db): ProjectRow[] {
   return db.prepare(`
     SELECT id, name, member_status AS memberStatus, fetched_at AS fetchedAt
     FROM projects
-    ORDER BY name`).all() as ProjectRow[]
+    ORDER BY sort_order`).all() as ProjectRow[]
 }
 
 // Sidebar list only, messages load when a session is opened

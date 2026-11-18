@@ -31,6 +31,7 @@ CREATE TABLE projects (
   id             TEXT NOT NULL PRIMARY KEY,
   name           TEXT NOT NULL,
   member_status  TEXT NOT NULL DEFAULT 'active' CHECK (member_status IN ('active','removed')),
+  sort_order     INTEGER NOT NULL DEFAULT 0,
   fetched_at     INTEGER NOT NULL,
   last_opened_at INTEGER
 ) STRICT;
