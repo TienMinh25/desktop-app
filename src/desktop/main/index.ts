@@ -138,7 +138,10 @@ ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
     projectsHttp ??= new BackendHttpClient(envConfig.BACKEND_HOST, getAuthService())
     let error: string | null = null
     try {
-        syncProjects(database, await fetchProjects(projectsHttp))
+        const projects = await fetchProjects(projectsHttp)
+        // The account can change while the request waits, never write into another account's DB
+        if (db?.handle !== database) throw new Error("Signed-in account changed")
+        syncProjects(database, projects)
     } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause)
     }
@@ -367,6 +370,7 @@ ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknown) => {
 })
 ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
+    closeDb()
     return await getAuthService().logout()
 })
 ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
@@ -437,7 +441,10 @@ app.whenReady().then(async () => {
     lspSettingsStore = new LspSettingsStore(ccodexDirectory, process.env, process.platform, app.getPath("home"))
     authService = new AuthService(
         new AuthSessionStore(ccodexDirectory),
-        () => broadcastAuthState({ authenticated: false, username: null }),
+        () => {
+            closeDb()
+            broadcastAuthState({ authenticated: false, username: null })
+        },
         envConfig.BACKEND_HOST,
     )
     setupAutoUpdater()

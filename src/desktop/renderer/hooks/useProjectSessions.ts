@@ -12,11 +12,18 @@ export function useProjectSessions(onError: (message: string) => void) {
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
+    // StrictMode mounts twice in dev, only the live mount may create or set state
+    let cancelled = false
     void (async () => {
       try {
         const { projects, error } = await window.desktop.listProjects()
         const active = projects.filter((project) => project.memberStatus === "active")
         const sessionLists = await Promise.all(active.map((project) => window.desktop.listSessions(project.id)))
+        if (cancelled) return
+        // The prompt bar needs an active chat, same as selecting an empty project
+        if (active[0] && sessionLists[0]?.length === 0) {
+          sessionLists[0] = [await window.desktop.createSession(active[0].id, "New chat #1")]
+        }
         setLoadError(error)
         setAssignedProjects(active.map((project) => ({ id: project.id, name: project.name, key: "", folder: "" })))
         setExpandedProjects(Object.fromEntries(active.map((project) => [project.id, true])))
@@ -30,11 +37,14 @@ export function useProjectSessions(onError: (message: string) => void) {
         setSelectedProjectId(active[0]?.id ?? null)
         setActiveSessionId(sessionLists[0]?.[0]?.id ?? null)
       } catch (cause) {
-        setLoadError(cause instanceof Error ? cause.message : String(cause))
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : String(cause))
       } finally {
-        setIsLoaded(true)
+        if (!cancelled) setIsLoaded(true)
       }
     })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const isAssigned = (projectId: string) => assignedProjects.some((project) => project.id === projectId)
@@ -119,19 +129,18 @@ export function useProjectSessions(onError: (message: string) => void) {
       reportError("delete chat", cause)
       return false
     }
-    const wasActive = sessionId === activeSessionId
-    const remaining = sessions.filter((s) => s.id !== sessionId)
-    setSessions(remaining)
+    // Functional update so chats created while the delete was pending are kept
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId))
 
-    if (wasActive && selectedProjectId) {
-      const remainingInProject = remaining
-        .filter((s) => s.projectId === selectedProjectId)
-        .sort((a, b) => a.projectOrder - b.projectOrder)
+    if (sessionId === activeSessionId && selectedProjectId) {
+      const next = sessions
+        .filter((s) => s.id !== sessionId && s.projectId === selectedProjectId)
+        .sort((a, b) => a.projectOrder - b.projectOrder)[0]
 
-      if (remainingInProject.length > 0 && remainingInProject[0]) {
-        setActiveSessionId(remainingInProject[0].id)
+      if (next) {
+        setActiveSessionId((current) => (current === sessionId ? next.id : current))
       } else {
-        createNewChat(selectedProjectId)
+        void createNewChat(selectedProjectId)
       }
     }
     return true

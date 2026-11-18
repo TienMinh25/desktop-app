@@ -73,3 +73,12 @@ test("createSession, renameSession and deleteSession persist to the sidebar list
   expect(listSessions(db, "101")).toEqual([])
   expect(() => createSession(db, "missing", "/home", "x")).toThrow()
 })
+
+test("searchSessions caps the snippet length", () => {
+  const db = memoryDb()
+  syncProjects(db, [{ id: "101", name: "Formbuilder" }])
+  db.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES ('s1', '101', '/tmp', 'Log', 1, 1)").run()
+  db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at) VALUES ('s1', 1, 'assistant', ?, 1)")
+    .run(JSON.stringify({ v: 1, parts: [{ type: "text", text: `error found ${"x".repeat(5000)}` }] }))
+  expect(searchSessions(db, "error")[0]?.snippet?.length).toBe(160)
+})

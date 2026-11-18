@@ -117,7 +117,8 @@ export function searchSessions(db: Db, query: string): SearchHit[] {
 function snippetAround(text: string, query: string): string {
   const flat = text.replace(/\s+/g, " ").trim()
   const at = flat.toLowerCase().indexOf(query.toLowerCase())
-  return at > 15 ? `…${flat.slice(flat.lastIndexOf(" ", at - 12) + 1)}` : flat
+  // Cap length, a long tool output would otherwise go whole over IPC
+  return (at > 15 ? `…${flat.slice(flat.lastIndexOf(" ", at - 12) + 1)}` : flat).slice(0, 160)
 }
 
 // Main writes projects/sessions/config/mcp/skills, harness writes messages/artifacts/compactions

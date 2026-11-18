@@ -168,7 +168,8 @@ export function ProjectSidebar({
           <div className={styles.sidebarEmpty}>No chats match "{searchResult.query}".</div>
         ) : (
           projects.map((project) => {
-            const isExpanded = !!expandedProjects[project.id]
+            // Show hits even in a collapsed project
+            const isExpanded = !!searchResult || !!expandedProjects[project.id]
             const isSelected = selectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
@@ -265,6 +266,8 @@ export function ProjectSidebar({
                                   onClick={(e) => e.stopPropagation()}
                                   onFocus={(e) => e.currentTarget.select()}
                                   onKeyDown={(e) => {
+                                    // Enter also confirms an IME candidate (Vietnamese, CJK), not the rename
+                                    if (e.nativeEvent.isComposing) return
                                     if (e.key === "Escape") e.currentTarget.value = session.title
                                     if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur()
                                   }}
