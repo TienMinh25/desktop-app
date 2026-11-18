@@ -3,7 +3,6 @@ node_modules
 
 # output
 out
-build
 dist
 *.tgz
 release
