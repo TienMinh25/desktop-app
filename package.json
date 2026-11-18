@@ -7,6 +7,7 @@
   "private": true,
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/bun": "latest",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -23,11 +24,16 @@
     "vite": "^8.3.5"
   },
   "scripts": {
-    "postinstall": "install-electron",
+    "postinstall": "node --use-system-ca ./node_modules/electron/install.js",
     "dev": "electron-vite dev --entry ./out/main/index.js",
     "build": "electron-vite build",
     "build:win": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --win",
     "build:mac": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --mac",
+    "build:mac:zip": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --mac zip",
+    "build:all": "bun run build && node --use-system-ca ./node_modules/electron-builder/cli.js --win --mac zip",
+    "docker:build": "bun run scripts/docker-build.ts all",
+    "docker:build:win": "bun run scripts/docker-build.ts win",
+    "docker:build:mac": "bun run scripts/docker-build.ts mac",
     "preview": "electron-vite preview",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -37,6 +43,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
     "@vscode/ripgrep": "^1.18.0",
+    "better-sqlite3": "^13.2.0",
     "electron-updater": "^6.8.11",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

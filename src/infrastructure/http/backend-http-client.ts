@@ -1,5 +1,6 @@
 import { Agent, fetch as undiciFetch, Headers as UndiciHeaders } from "undici"
 import type { HeadersInit, RequestInfo, RequestInit, Response } from "undici-types"
+import { getSystemCaCertificates } from "./system-ca"
 
 export interface AuthTokenProvider {
   getAccessToken(): Promise<string>
@@ -35,9 +36,11 @@ export class BackendHttpClient {
     fetchImpl: BackendFetch = undiciFetch,
   ) {
     this.backendOrigin = normalizeBackendHost(backendHost)
+    const ca = getSystemCaCertificates()
     this.dispatcher = new Agent({
       headersTimeout: options.responseHeadersTimeoutMs,
       bodyTimeout: options.streamIdleTimeoutMs,
+      ...(ca ? { connect: { ca } } : {}),
     })
     this.fetchImpl = this.createAuthenticatedFetch(fetchImpl)
   }
@@ -75,7 +78,10 @@ export class BackendHttpClient {
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(resolveBackendUrl(this.backendOrigin, path), init)
+    const response = await this.fetchImpl(resolveBackendUrl(this.backendOrigin, path), {
+      dispatcher: this.dispatcher,
+      ...init,
+    })
     if (!response.ok) throw new Error(`Backend API returned ${response.status}: ${await response.text()}`)
     return await response.json() as T
   }

@@ -6,6 +6,7 @@ import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
+import type { ProjectRow, SearchHit, SessionRow } from "../main/db"
 
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
@@ -53,6 +54,18 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.send(IPC_CHANNELS.PERMISSION_RESPONSE, { permissionRequestId, decision }),
   respondToQuestion: (questionRequestId: string, answer: string): void =>
     ipcRenderer.send(IPC_CHANNELS.QUESTION_RESPONSE, { questionRequestId, answer }),
+  listProjects: (): Promise<{ projects: ProjectRow[]; error: string | null }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),
+  listSessions: (projectId: string): Promise<SessionRow[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_LIST, projectId),
+  searchSessions: (query: string): Promise<SearchHit[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_SEARCH, query),
+  createSession: (projectId: string, title: string): Promise<SessionRow> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_CREATE, projectId, title),
+  renameSession: (sessionId: string, title: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_RENAME, sessionId, title),
+  deleteSession: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_DELETE, sessionId),
   subscribeHarnessEvents: (listener: (event: HarnessEvent) => void): (() => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: HarnessEvent) => listener(event)
     ipcRenderer.on(IPC_CHANNELS.HARNESS_EVENT, handler)

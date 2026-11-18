@@ -6,12 +6,10 @@ import { TitleBar } from "./components/layout/TitleBar/TitleBar"
 import { APP_CONFIG } from "./constants"
 import { useToast } from "./hooks/useToast"
 import { LoginPage } from "./pages/LoginPage/LoginPage"
-import { NoProjectPage } from "./pages/NoProjectPage/NoProjectPage"
 import { WorkspacePage } from "./pages/WorkspacePage/WorkspacePage"
 import "./styles/global.scss"
 import { ThemeProvider, type Theme } from "./theme/ThemeContext"
 import type { AuthState } from "../../contracts/auth"
-import { MOCK_ASSIGNED_PROJECTS } from "./data/mockData"
 function AppContent() {
   const [authState, setAuthState] = useState<AuthState | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
@@ -65,16 +63,9 @@ function AppContent() {
           <div className={styles.authLoading} role="status">Checking sign-in status…</div>
         ) : !authState?.authenticated ? (
           <LoginPage onLoginSuccess={handleLoginSuccess} />
-        ) : (MOCK_ASSIGNED_PROJECTS[authState.username ?? ""] ?? []).length === 0 ? (
-          <NoProjectPage
-            username={authState.username ?? ""}
-            onSignOut={handleSignOut}
-            onThemeChangeToast={handleThemeChangeToast}
-          />
         ) : (
           <WorkspacePage
             username={authState.username ?? ""}
-            assignedProjectIds={MOCK_ASSIGNED_PROJECTS[authState.username ?? ""] ?? []}
             onSignOut={handleSignOut}
             onShowToast={showToast}
             onThemeChangeToast={handleThemeChangeToast}
