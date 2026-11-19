@@ -6,7 +6,7 @@ import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
-import type { ProjectsListResult, SearchHit, SessionRow } from "../../contracts/projects"
+import type { ProjectsListResult, SessionRow } from "../../contracts/projects"
 
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
@@ -58,8 +58,6 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),
   listSessions: (projectId: string): Promise<SessionRow[]> =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_LIST, projectId),
-  searchSessions: (query: string): Promise<SearchHit[]> =>
-    ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_SEARCH, query),
   createSession: (projectId: string, title: string): Promise<SessionRow> =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_CREATE, projectId, title),
   renameSession: (sessionId: string, title: string): Promise<void> =>

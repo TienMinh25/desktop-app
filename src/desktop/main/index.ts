@@ -21,7 +21,7 @@ import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
 import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
-import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSessions, syncProjects } from "./project-session-store"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, syncProjects } from "./project-session-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
@@ -187,11 +187,6 @@ ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
 ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
     requireTrustedSender(event)
     return listSessions(getDb(), requireText(projectId, "projectId"))
-})
-ipcMain.handle(IPC_CHANNELS.SESSIONS_SEARCH, async (event, query: unknown) => {
-    requireTrustedSender(event)
-    if (typeof query !== "string") throw new Error("query must be a string")
-    return searchSessions(getDb(), query.trim())
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
     requireTrustedSender(event)

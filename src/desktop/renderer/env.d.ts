@@ -5,7 +5,7 @@ import type { McpConnectorItem, McpListServersParams, McpListServersResponse } f
 import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
-import type { ProjectsListResult, SearchHit, SessionRow } from "../../contracts/projects"
+import type { ProjectsListResult, SessionRow } from "../../contracts/projects"
 
 declare global {
   interface SelectedFolderInfo {
@@ -40,7 +40,6 @@ declare global {
     listProjects: () => Promise<ProjectsListResult>
     subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void) => () => void
     listSessions: (projectId: string) => Promise<SessionRow[]>
-    searchSessions: (query: string) => Promise<SearchHit[]>
     createSession: (projectId: string, title: string) => Promise<SessionRow>
     renameSession: (sessionId: string, title: string) => Promise<void>
     deleteSession: (sessionId: string) => Promise<void>

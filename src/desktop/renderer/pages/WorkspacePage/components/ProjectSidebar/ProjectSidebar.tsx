@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react"
+import { useRef, useState, type MouseEvent } from "react"
 import { newestFirst, type ChatSession, type ProjectItem } from "../../../../hooks/useProjectSessions"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
@@ -43,35 +43,15 @@ export function ProjectSidebar({
   const [searchQuery, setSearchQuery] = useState("")
   const [openMenuSession, setOpenMenuSession] = useState<SessionMenuState | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [searchResult, setSearchResult] = useState<{ query: string; snippets: Map<string, string | null> } | null>(null)
   const sessionMenuRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(sessionMenuRef, () => setOpenMenuSession(null))
 
-  useEffect(() => {
-    const query = searchQuery.trim()
-    if (!query) {
-      setSearchResult(null)
-      return
-    }
-    // Drop results of an older query
-    let stale = false
-    // Search runs on the main process, wait for typing to pause
-    const timer = setTimeout(() => {
-      window.desktop.searchSessions(query).then(
-        (hits) => {
-          if (!stale) setSearchResult({ query, snippets: new Map(hits.map((hit) => [hit.id, hit.snippet])) })
-        },
-        () => {
-          if (!stale) setSearchResult(null)
-        },
-      )
-    }, 200)
-    return () => {
-      stale = true
-      clearTimeout(timer)
-    }
-  }, [searchQuery, sessions])
+  // Search by chat title only, the sidebar already holds every title
+  const query = searchQuery.trim()
+  const normalizedQuery = query.toLocaleLowerCase()
+  const matchesQuery = (session: ChatSession) => session.title.toLocaleLowerCase().includes(normalizedQuery)
+  const hasMatch = !query || sessions.some((session) => projects.some((p) => p.id === session.projectId) && matchesQuery(session))
 
   const handleSessionMouseEnter = (event: MouseEvent<HTMLDivElement>) => {
     const copyEl = event.currentTarget.querySelector<HTMLElement>(`.${styles.treeSessionCopy}`)
@@ -149,7 +129,7 @@ export function ProjectSidebar({
         </svg>
         <input
           className={styles.searchInput}
-          placeholder="Search chats and messages..."
+          placeholder="Search chats..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -164,18 +144,18 @@ export function ProjectSidebar({
       >
         {projects.length === 0 ? (
           <div className={styles.sidebarEmpty}>No assigned projects.</div>
-        ) : searchResult?.snippets.size === 0 ? (
-          <div className={styles.sidebarEmpty}>No chats match "{searchResult.query}".</div>
+        ) : !hasMatch ? (
+          <div className={styles.sidebarEmpty}>No chats match "{query}".</div>
         ) : (
           projects.map((project) => {
             // Show hits even in a collapsed project
-            const isExpanded = !!searchResult || !!expandedProjects[project.id]
+            const isExpanded = !!query || !!expandedProjects[project.id]
             const isSelected = selectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
               .sort(newestFirst)
-              .filter((s) => !searchResult || searchResult.snippets.has(s.id))
-            if (searchResult && projectSessions.length === 0) return null
+              .filter((s) => !query || matchesQuery(s))
+            if (query && projectSessions.length === 0) return null
 
             return (
               <section
@@ -243,13 +223,12 @@ export function ProjectSidebar({
                       projectSessions.map((session) => {
                         const isSessionActive = session.id === activeSessionId
                         const isMenuOpen = openMenuSession?.sessionId === session.id
-                        const snippet = searchResult?.snippets.get(session.id)
                         return (
                           <div
                             key={session.id}
                             className={`${styles.treeSessionRow} ${
                               isSessionActive || isMenuOpen ? styles.active : ""
-                            } ${snippet ? styles.withSnippet : ""}`}
+                            }`}
                             title={`${session.title} · ${project.name}`}
                             onClick={() => onSelectSession(session.id)}
                             onMouseEnter={handleSessionMouseEnter}
@@ -279,12 +258,7 @@ export function ProjectSidebar({
                                 />
                               ) : (
                                 <span className={styles.treeSessionTitle}>
-                                  {highlight(session.title, searchResult?.query)}
-                                </span>
-                              )}
-                              {snippet && (
-                                <span className={styles.treeSessionSnippet}>
-                                  {highlight(snippet, searchResult?.query)}
+                                  {highlight(session.title, query)}
                                 </span>
                               )}
                             </span>

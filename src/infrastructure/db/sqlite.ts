@@ -32,7 +32,7 @@ CREATE TABLE projects (
   id             TEXT NOT NULL PRIMARY KEY,
   key            TEXT NOT NULL,
   name           TEXT NOT NULL,
-  member_status  TEXT NOT NULL DEFAULT 'active' CHECK (member_status IN ('active','removed')),
+  is_assigned    INTEGER NOT NULL DEFAULT 1 CHECK (is_assigned IN (0,1)),
   sort_order     INTEGER NOT NULL DEFAULT 0,
   fetched_at     INTEGER NOT NULL,
   last_opened_at INTEGER
@@ -45,10 +45,9 @@ CREATE TABLE sessions (
   title        TEXT NOT NULL,
   last_preview TEXT CHECK (last_preview IS NULL OR length(last_preview) <= 200),
   created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL CHECK (updated_at >= created_at),
-  deleted_at   INTEGER
+  updated_at   INTEGER NOT NULL CHECK (updated_at >= created_at)
 ) STRICT;
-CREATE INDEX sessions_sidebar ON sessions(project_id, updated_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX sessions_sidebar ON sessions(project_id, updated_at DESC);
 
 CREATE TABLE session_config (
   session_id      TEXT NOT NULL PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,

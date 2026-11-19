@@ -16,7 +16,8 @@ export interface ProjectRow {
   id: string
   key: string
   name: string
-  memberStatus: "active" | "removed"
+  // false once the backend list no longer has the project, its chats stay in the DB
+  isAssigned: boolean
   fetchedAt: number
 }
 
@@ -26,11 +27,6 @@ export interface SessionRow {
   title: string
   lastPreview: string | null
   updatedAt: number
-}
-
-export interface SearchHit {
-  id: string
-  snippet: string | null
 }
 
 // syncedAt is null until the first successful sync of this app run

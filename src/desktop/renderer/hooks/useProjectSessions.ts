@@ -15,6 +15,8 @@ export interface ChatSession {
   updatedAt: number
 }
 
+export type ProjectSessions = ReturnType<typeof useProjectSessions>
+
 export function useProjectSessions(onError: (message: string) => void) {
   const [assignedProjects, setAssignedProjects] = useState<ProjectItem[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -31,7 +33,7 @@ export function useProjectSessions(onError: (message: string) => void) {
     const apply = async ({ projects, syncedAt, error }: ProjectsListResult) => {
       // Fresh DB and the first sync still running, its projects:changed brings the list
       if (projects.length === 0 && syncedAt === null && error === null) return
-      const active = projects.filter((project) => project.memberStatus === "active")
+      const active = projects.filter((project) => project.isAssigned)
       const sessionLists = await Promise.all(active.map((project) => window.desktop.listSessions(project.id)))
       if (cancelled) return
       // The prompt bar needs an active chat, same as selecting an empty project
