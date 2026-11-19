@@ -9,12 +9,12 @@ import type { TodoItem } from "../../../../contracts/todos"
 import { ConversationStream } from "./components/ConversationStream/ConversationStream"
 import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
+import { NoProjectPage } from "../NoProjectPage/NoProjectPage"
 import { PromptBar } from "./components/PromptBar/PromptBar"
 import styles from "./WorkspacePage.module.scss"
 
 interface WorkspacePageProps {
   username: string
-  assignedProjectIds: string[]
   onSignOut: () => void
   onShowToast: (message: string) => void
   onThemeChangeToast: (theme: Theme) => void
@@ -50,13 +50,14 @@ function assertNever(value: never): never {
 
 export function WorkspacePage({
   username,
-  assignedProjectIds,
   onSignOut,
   onShowToast,
   onThemeChangeToast,
 }: WorkspacePageProps) {
   const {
     assignedProjects,
+    loadError,
+    isLoaded,
     selectedProjectId,
     sessions,
     activeSessionId,
@@ -68,7 +69,11 @@ export function WorkspacePage({
     createNewChat,
     renameSession,
     deleteSession,
-  } = useProjectSessions(assignedProjectIds)
+  } = useProjectSessions(onShowToast)
+
+  useEffect(() => {
+    if (loadError) onShowToast(`Could not load projects from backend: ${loadError}`)
+  }, [loadError, onShowToast])
 
   const [promptText, setPromptText] = useState("")
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
@@ -172,7 +177,7 @@ export function WorkspacePage({
     selectProject(projectId)
   }
 
-  const handleSelectSession = (sessionId: number) => {
+  const handleSelectSession = (sessionId: string) => {
     setIsCustomizeOpen(false)
     selectSession(sessionId)
   }
@@ -186,8 +191,8 @@ export function WorkspacePage({
     setPromptText("")
   }
 
-  const handleDeleteSession = (sessionId: number) => {
-    if (!deleteSession(sessionId)) return
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!(await deleteSession(sessionId))) return
     const runtimeSessionId = String(sessionId)
     window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.SESSION_DELETE, sessionId: runtimeSessionId })
     setTurns((current) => { const next = { ...current }; delete next[runtimeSessionId]; return next })
@@ -217,6 +222,10 @@ export function WorkspacePage({
       onDeleteSession={handleDeleteSession}
     />
   )
+
+  if (isLoaded && !loadError && assignedProjects.length === 0) {
+    return <NoProjectPage username={username} onSignOut={onSignOut} onThemeChangeToast={onThemeChangeToast} />
+  }
 
   return (
     <MainLayout

@@ -5,6 +5,7 @@ import type { McpConnectorItem, McpListServersParams, McpListServersResponse } f
 import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
+import type { ProjectRow, SearchHit, SessionRow } from "../main/db"
 
 declare global {
   interface SelectedFolderInfo {
@@ -36,6 +37,12 @@ declare global {
     respondToPermission: (permissionRequestId: string, decision: "allow" | "deny") => void
     respondToQuestion: (questionRequestId: string, answer: string) => void
     subscribeHarnessEvents: (listener: (event: HarnessEvent) => void) => () => void
+    listProjects: () => Promise<{ projects: ProjectRow[]; error: string | null }>
+    listSessions: (projectId: string) => Promise<SessionRow[]>
+    searchSessions: (query: string) => Promise<SearchHit[]>
+    createSession: (projectId: string, title: string) => Promise<SessionRow>
+    renameSession: (sessionId: string, title: string) => Promise<void>
+    deleteSession: (sessionId: string) => Promise<void>
   }
 
   interface Window {

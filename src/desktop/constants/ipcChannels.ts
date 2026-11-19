@@ -21,4 +21,10 @@ export const IPC_CHANNELS = {
   UPDATER_START: "updater:start",
   UPDATER_INSTALL: "updater:install",
   UPDATER_STATUS: "updater:status",
+  PROJECTS_LIST: "projects:list",
+  SESSIONS_LIST: "sessions:list",
+  SESSIONS_SEARCH: "sessions:search",
+  SESSIONS_CREATE: "sessions:create",
+  SESSIONS_RENAME: "sessions:rename",
+  SESSIONS_DELETE: "sessions:delete",
 } as const

@@ -19,6 +19,12 @@ import { LspSettingsStore } from "./lsp-settings-store"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
+import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
+import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
+import { createSession, dbPath, deleteSession, listProjects, listSessions, openDb, renameSession, searchSessions, syncProjects, type Db } from "./db"
+import { fetchProjects, userIdFromJwt } from "./projects"
+
+getSystemDispatcher()
 
 const { autoUpdater } = electronUpdater
 
@@ -102,6 +108,68 @@ async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown)
         } satisfies AuthRpcResponse)
     }
     return true
+}
+
+let db: { owner: string; handle: Db } | null = null
+let projectsHttp: BackendHttpClient | null = null
+
+// Reopen when the signed-in account changes so one account never writes into another's DB
+async function getDb(): Promise<Db> {
+    const owner = userIdFromJwt(await getAuthService().getAccessToken())
+    if (db?.owner !== owner) {
+        closeDb()
+        db = { owner, handle: openDb(dbPath(app.getPath("userData"), owner)) }
+    }
+    return db.handle
+}
+
+function closeDb() {
+    db?.handle.close()
+    db = null
+}
+
+function requireTrustedSender(event: Electron.IpcMainInvokeEvent) {
+    if (!isTrustedAuthSender(event)) throw new Error("Untrusted project request")
+}
+
+ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
+    requireTrustedSender(event)
+    const database = await getDb()
+    projectsHttp ??= new BackendHttpClient(envConfig.BACKEND_HOST, getAuthService())
+    let error: string | null = null
+    try {
+        syncProjects(database, await fetchProjects(projectsHttp))
+    } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause)
+    }
+    return { projects: listProjects(database), error }
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
+    requireTrustedSender(event)
+    return listSessions(await getDb(), requireText(projectId, "projectId"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_SEARCH, async (event, query: unknown) => {
+    requireTrustedSender(event)
+    if (typeof query !== "string") throw new Error("query must be a string")
+    return searchSessions(await getDb(), query.trim())
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
+    requireTrustedSender(event)
+    return createSession(await getDb(), requireText(projectId, "projectId"), app.getPath("home"), requireText(title, "title"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, title: unknown) => {
+    requireTrustedSender(event)
+    renameSession(await getDb(), requireText(sessionId, "sessionId"), requireText(title, "title"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
+    requireTrustedSender(event)
+    deleteSession(await getDb(), requireText(sessionId, "sessionId"))
+})
+
+// Renderer input is untrusted, reject empty values before writing
+function requireText(value: unknown, name: string): string {
+    if (typeof value !== "string" || !value.trim()) throw new Error(`${name} must be a non-empty string`)
+    return value.trim()
 }
 
 function broadcastUpdaterState(state: AppUpdaterState) {
@@ -381,6 +449,7 @@ app.whenReady().then(async () => {
         }
     })
 })
+app.on("before-quit", closeDb)
 app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
         stopHarnessProcess()

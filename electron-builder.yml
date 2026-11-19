@@ -14,6 +14,7 @@ files:
 asarUnpack:
   - "**/*.node"
   - "**/node_modules/@vscode/ripgrep/**"
+  - "**/node_modules/@vscode/ripgrep-*/**"
 win:
   executableName: C-CodeX Desktop
   icon: build/cmc_logo.ico

@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent } from "react"
+import { useEffect, useRef, useState, type MouseEvent } from "react"
 import type { ChatSession, ProjectItem } from "../../../../data/mockData"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
@@ -7,20 +7,20 @@ interface ProjectSidebarProps {
   projects: ProjectItem[]
   selectedProjectId: string | null
   sessions: ChatSession[]
-  activeSessionId: number | null
+  activeSessionId: string | null
   expandedProjects: Record<string, boolean>
   isCustomizeActive?: boolean
   onSelectCustomize?: () => void
   onSelectProject: (projectId: string) => void
   onToggleExpandProject: (projectId: string) => void
-  onSelectSession: (sessionId: number) => void
+  onSelectSession: (sessionId: string) => void
   onNewChat: () => void
-  onRenameSession: (sessionId: number) => void
-  onDeleteSession: (sessionId: number) => void
+  onRenameSession: (sessionId: string, title: string) => void
+  onDeleteSession: (sessionId: string) => void
 }
 
 interface SessionMenuState {
-  sessionId: number
+  sessionId: string
   top: number
   left: number
 }
@@ -42,11 +42,36 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [openMenuSession, setOpenMenuSession] = useState<SessionMenuState | null>(null)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [searchResult, setSearchResult] = useState<{ query: string; snippets: Map<string, string | null> } | null>(null)
   const sessionMenuRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(sessionMenuRef, () => setOpenMenuSession(null))
 
-  const normalizedQuery = searchQuery.trim().toLowerCase()
+  useEffect(() => {
+    const query = searchQuery.trim()
+    if (!query) {
+      setSearchResult(null)
+      return
+    }
+    // Drop results of an older query
+    let stale = false
+    // Search runs on the main process, wait for typing to pause
+    const timer = setTimeout(() => {
+      window.desktop.searchSessions(query).then(
+        (hits) => {
+          if (!stale) setSearchResult({ query, snippets: new Map(hits.map((hit) => [hit.id, hit.snippet])) })
+        },
+        () => {
+          if (!stale) setSearchResult(null)
+        },
+      )
+    }, 200)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [searchQuery, sessions])
 
   const handleSessionMouseEnter = (event: MouseEvent<HTMLDivElement>) => {
     const copyEl = event.currentTarget.querySelector<HTMLElement>(`.${styles.treeSessionCopy}`)
@@ -93,7 +118,11 @@ export function ProjectSidebar({
         <button
           className={styles.newChatButton}
           type="button"
-          onClick={onNewChat}
+          onClick={() => {
+            // Clear search so the new chat is visible
+            setSearchQuery("")
+            onNewChat()
+          }}
           title="Start a new chat in the active project"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
@@ -120,7 +149,7 @@ export function ProjectSidebar({
         </svg>
         <input
           className={styles.searchInput}
-          placeholder="Search sessions..."
+          placeholder="Search chats and messages..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -135,6 +164,8 @@ export function ProjectSidebar({
       >
         {projects.length === 0 ? (
           <div className={styles.sidebarEmpty}>No assigned projects.</div>
+        ) : searchResult?.snippets.size === 0 ? (
+          <div className={styles.sidebarEmpty}>No chats match "{searchResult.query}".</div>
         ) : (
           projects.map((project) => {
             const isExpanded = !!expandedProjects[project.id]
@@ -142,9 +173,8 @@ export function ProjectSidebar({
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
               .sort((a, b) => a.projectOrder - b.projectOrder)
-              .filter((s) =>
-                normalizedQuery ? s.title.toLowerCase().includes(normalizedQuery) : true,
-              )
+              .filter((s) => !searchResult || searchResult.snippets.has(s.id))
+            if (searchResult && projectSessions.length === 0) return null
 
             return (
               <section
@@ -212,19 +242,48 @@ export function ProjectSidebar({
                       projectSessions.map((session) => {
                         const isSessionActive = session.id === activeSessionId
                         const isMenuOpen = openMenuSession?.sessionId === session.id
+                        const snippet = searchResult?.snippets.get(session.id)
                         return (
                           <div
                             key={session.id}
                             className={`${styles.treeSessionRow} ${
                               isSessionActive || isMenuOpen ? styles.active : ""
-                            }`}
+                            } ${snippet ? styles.withSnippet : ""}`}
                             title={`${session.title} · ${project.name}`}
                             onClick={() => onSelectSession(session.id)}
                             onMouseEnter={handleSessionMouseEnter}
                             onMouseLeave={handleSessionMouseLeave}
                           >
                             <span className={styles.treeSessionCopy}>
-                              <span className={styles.treeSessionTitle}>{session.title}</span>
+                              {/* window.prompt is not supported in Electron, rename inline */}
+                              {editingSessionId === session.id ? (
+                                <input
+                                  className={styles.renameInput}
+                                  aria-label="Chat title"
+                                  autoFocus
+                                  defaultValue={session.title}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onFocus={(e) => e.currentTarget.select()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") e.currentTarget.value = session.title
+                                    if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur()
+                                  }}
+                                  onBlur={(e) => {
+                                    setEditingSessionId(null)
+                                    const title = e.currentTarget.value.trim()
+                                    if (title && title !== session.title) onRenameSession(session.id, title)
+                                  }}
+                                />
+                              ) : (
+                                <span className={styles.treeSessionTitle}>
+                                  {highlight(session.title, searchResult?.query)}
+                                </span>
+                              )}
+                              {snippet && (
+                                <span className={styles.treeSessionSnippet}>
+                                  {highlight(snippet, searchResult?.query)}
+                                </span>
+                              )}
                             </span>
                             <span
                               className={`${styles.sessionActions} ${
@@ -284,9 +343,8 @@ export function ProjectSidebar({
             type="button"
             className={styles.sessionMenuItem}
             onClick={() => {
-              const targetId = openMenuSession.sessionId
+              setEditingSessionId(openMenuSession.sessionId)
               setOpenMenuSession(null)
-              onRenameSession(targetId)
             }}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -324,5 +382,13 @@ export function ProjectSidebar({
         </div>
       )}
     </div>
+  )
+}
+
+function highlight(text: string, query: string | undefined) {
+  if (!query) return text
+  const pattern = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
+  return text.split(pattern).map((part, index) =>
+    index % 2 ? <mark key={index} className={styles.searchMark}>{part}</mark> : part,
   )
 }
