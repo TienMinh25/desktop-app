@@ -6,7 +6,7 @@ import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
-import type { ProjectsListResult, SessionRow } from "../../contracts/projects"
+import type { ProjectsListResult, SessionRow, SidebarSearchResult } from "../../contracts/projects"
 
 contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,
@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_RENAME, sessionId, title),
   deleteSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_DELETE, sessionId),
+  searchSidebar: (query: string): Promise<SidebarSearchResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SIDEBAR_SEARCH, query),
   subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void): (() => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, result: ProjectsListResult) => listener(result)
     ipcRenderer.on(IPC_CHANNELS.PROJECTS_CHANGED, handler)

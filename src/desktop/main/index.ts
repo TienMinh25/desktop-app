@@ -21,7 +21,7 @@ import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
 import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
-import { createSession, deleteSession, listProjects, listSessions, renameSession, syncProjects } from "./project-session-store"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
@@ -199,6 +199,10 @@ ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, t
 ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
     requireTrustedSender(event)
     deleteSession(getDb(), requireText(sessionId, "sessionId"))
+})
+ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
+    requireTrustedSender(event)
+    return searchSidebar(getDb(), requireText(query, "query"))
 })
 
 // Renderer input is untrusted, reject empty values before writing

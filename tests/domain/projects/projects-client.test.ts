@@ -13,7 +13,7 @@ const tokenProvider = {
 function page(projects: Array<{ id: number; key: string; name: string }>, hasNext: boolean, code = "0000") {
   return {
     data: projects.map((project) => ({ ...project, organization_unit_id: 25 })),
-    metadata: { code, pagination: { page: 1, limit: 20, total_items: projects.length, total_pages: 1, has_next: hasNext, has_previous: false } },
+    metadata: { code, pagination: { page: 1, limit: 100, total_items: projects.length, total_pages: 1, has_next: hasNext, has_previous: false } },
   }
 }
 
@@ -36,8 +36,8 @@ test("fetchProjects sends the login token and walks every page", async () => {
     { id: "7", key: "P-7", name: "CRM" },
   ])
   expect(seen).toEqual([
-    { url: "https://company.test/api/v2/projects?source=desktop-app&page=1&page_size=20", authorization: "Bearer login-token" },
-    { url: "https://company.test/api/v2/projects?source=desktop-app&page=2&page_size=20", authorization: "Bearer login-token" },
+    { url: "https://company.test/api/v2/projects?source=desktop-app&page=1&page_size=100", authorization: "Bearer login-token" },
+    { url: "https://company.test/api/v2/projects?source=desktop-app&page=2&page_size=100", authorization: "Bearer login-token" },
   ])
 }, 30_000) // BackendHttpClient reads the Windows cert store via PowerShell on first use
 

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { createSession, deleteSession, listProjects, listSessions, renameSession, syncProjects } from "../../src/desktop/main/project-session-store"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "../../src/desktop/main/project-session-store"
 import { configureConnection, migrate, type Db } from "../../src/infrastructure/db/sqlite"
 
 function memoryDb(): Db {
@@ -59,4 +59,17 @@ test("deleteSession removes the row and its messages", () => {
   deleteSession(db, created.id)
   expect(listSessions(db, "101")).toEqual([])
   expect(db.prepare("SELECT count(*) AS n FROM messages").get()).toEqual({ n: 0 })
+})
+
+test("searchSidebar matches project names and chat titles of assigned projects, ignoring case", () => {
+  const db = memoryDb()
+  syncProjects(db, [{ id: "1", key: "P-1", name: "Formbuilder" }, { id: "2", key: "P-2", name: "Renamer" }])
+  const logo = createSession(db, "1", "/home", "Fix logo")
+  createSession(db, "2", "/home", "Build form 50%")
+  expect(searchSidebar(db, "FORM")).toEqual({ projectIds: ["1"], sessionIds: [expect.any(String)] })
+  expect(searchSidebar(db, "logo")).toEqual({ projectIds: [], sessionIds: [logo.id] })
+  // % is plain text, not a LIKE wildcard
+  expect(searchSidebar(db, "%").sessionIds).toHaveLength(1)
+  syncProjects(db, [{ id: "2", key: "P-2", name: "Renamer" }])
+  expect(searchSidebar(db, "logo")).toEqual({ projectIds: [], sessionIds: [] })
 })

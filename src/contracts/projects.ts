@@ -35,3 +35,9 @@ export interface ProjectsListResult {
   syncedAt: number | null
   error: string | null
 }
+
+// Ids of assigned projects whose name matches and sessions whose title matches
+export interface SidebarSearchResult {
+  projectIds: string[]
+  sessionIds: string[]
+}

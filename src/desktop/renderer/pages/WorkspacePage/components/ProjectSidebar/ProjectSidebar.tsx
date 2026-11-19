@@ -1,4 +1,5 @@
-import { useRef, useState, type MouseEvent } from "react"
+import { useEffect, useRef, useState, type MouseEvent } from "react"
+import type { SidebarSearchResult } from "../../../../../../contracts/projects"
 import { newestFirst, type ChatSession, type ProjectItem } from "../../../../hooks/useProjectSessions"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
@@ -47,11 +48,25 @@ export function ProjectSidebar({
 
   useClickOutside(sessionMenuRef, () => setOpenMenuSession(null))
 
-  // Search by chat title only, the sidebar already holds every title
+  // Search runs in the DB (project name, chat title), the list may be too long to filter here
   const query = searchQuery.trim()
-  const normalizedQuery = query.toLocaleLowerCase()
-  const matchesQuery = (session: ChatSession) => session.title.toLocaleLowerCase().includes(normalizedQuery)
-  const hasMatch = !query || sessions.some((session) => projects.some((p) => p.id === session.projectId) && matchesQuery(session))
+  const [hits, setHits] = useState<SidebarSearchResult | null>(null)
+  useEffect(() => {
+    if (!query) return setHits(null)
+    let stale = false
+    const timer = setTimeout(() => {
+      window.desktop.searchSidebar(query).then((result) => !stale && setHits(result)).catch(() => !stale && setHits(null))
+    }, 150)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [query])
+  // Until the first result arrives the full list stays on screen
+  const searching = !!query && !!hits
+  const sessionHit = (session: ChatSession) => !!hits?.sessionIds.includes(session.id)
+  const projectHit = (projectId: string) => !!hits?.projectIds.includes(projectId)
+  const hasMatch = !searching || projects.some((p) => projectHit(p.id) || sessions.some((s) => s.projectId === p.id && sessionHit(s)))
 
   const handleSessionMouseEnter = (event: MouseEvent<HTMLDivElement>) => {
     const copyEl = event.currentTarget.querySelector<HTMLElement>(`.${styles.treeSessionCopy}`)
@@ -129,7 +144,7 @@ export function ProjectSidebar({
         </svg>
         <input
           className={styles.searchInput}
-          placeholder="Search chats..."
+          placeholder="Search projects and chats..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -145,17 +160,18 @@ export function ProjectSidebar({
         {projects.length === 0 ? (
           <div className={styles.sidebarEmpty}>No assigned projects.</div>
         ) : !hasMatch ? (
-          <div className={styles.sidebarEmpty}>No chats match "{query}".</div>
+          <div className={styles.sidebarEmpty}>Nothing matches "{query}".</div>
         ) : (
           projects.map((project) => {
             // Show hits even in a collapsed project
-            const isExpanded = !!query || !!expandedProjects[project.id]
+            const isExpanded = searching || !!expandedProjects[project.id]
             const isSelected = selectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
               .sort(newestFirst)
-              .filter((s) => !query || matchesQuery(s))
-            if (query && projectSessions.length === 0) return null
+              // A project whose name matches keeps all its chats
+              .filter((s) => !searching || projectHit(project.id) || sessionHit(s))
+            if (searching && !projectHit(project.id) && projectSessions.length === 0) return null
 
             return (
               <section
@@ -211,7 +227,7 @@ export function ProjectSidebar({
                         />
                       </svg>
                     )}
-                    <span className={styles.projectName}>{project.name}</span>
+                    <span className={styles.projectName}>{highlight(project.name, query)}</span>
                   </button>
                 </div>
 

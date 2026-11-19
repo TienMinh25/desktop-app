@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import type { ProjectRow, SessionRow } from "../../contracts/projects"
+import type { ProjectRow, SessionRow, SidebarSearchResult } from "../../contracts/projects"
 import type { Db } from "../../infrastructure/db/sqlite"
 
 // Backend list is the source of truth for assignment and order, missing projects get is_assigned = 0
@@ -54,4 +54,15 @@ export function renameSession(db: Db, id: string, title: string): void {
 // Hard delete, ON DELETE CASCADE also removes the chat's messages, config and links
 export function deleteSession(db: Db, id: string): void {
   db.prepare("DELETE FROM sessions WHERE id = ?").run(id)
+}
+
+// shortcut: SQLite lower() folds ASCII only, "Đ" will not match "đ", add a folded column if users need it
+export function searchSidebar(db: Db, query: string): SidebarSearchResult {
+  const projectIds = db.prepare(`
+    SELECT id FROM projects
+    WHERE is_assigned = 1 AND instr(lower(name), lower(?)) > 0`).all(query) as Array<{ id: string }>
+  const sessionIds = db.prepare(`
+    SELECT s.id FROM sessions AS s JOIN projects AS p ON p.id = s.project_id
+    WHERE p.is_assigned = 1 AND instr(lower(s.title), lower(?)) > 0`).all(query) as Array<{ id: string }>
+  return { projectIds: projectIds.map((row) => row.id), sessionIds: sessionIds.map((row) => row.id) }
 }

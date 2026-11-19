@@ -1,7 +1,7 @@
 import { DesktopProjectsPageSchema, type DesktopProjectsPage, type ProjectRow } from "../../contracts/projects"
 import type { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 100
 // Stops a backend that always answers has_next = true
 const MAX_PAGES = 50
 
