@@ -222,7 +222,6 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 <span className={styles.ldapDot} />
                 LDAP · CMC Global
               </span>
-              <span className={styles.poaNote}>Authenticated via POA</span>
             </div>
 
             <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>

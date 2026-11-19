@@ -225,6 +225,26 @@
   overflow: hidden;
 }
 
+.searchMark {
+  padding: 0 1px;
+  border-radius: 3px;
+  color: $text-primary;
+  background: color-mix(in srgb, $accent-primary 35%, transparent);
+}
+
+.renameInput {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid $accent-primary;
+  border-radius: 5px;
+  outline: none;
+  color: $text-primary;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+}
+
 .treeSessionTitle {
   display: block;
   min-width: 0;

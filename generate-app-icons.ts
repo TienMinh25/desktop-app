@@ -29,15 +29,41 @@ try {
   await mkdir(icoPngs)
   await mkdir(output, { recursive: true })
 
-  for (const [size, name] of iconsetNames) {
-    execFileSync("sips", ["-s", "format", "png", "-z", String(size), String(size), source, "--out", join(iconset, name)], { stdio: "ignore" })
+  if (process.platform === "darwin") {
+    for (const [size, name] of iconsetNames) {
+      execFileSync("sips", ["-s", "format", "png", "-z", String(size), String(size), source, "--out", join(iconset, name)], { stdio: "ignore" })
+    }
+    execFileSync("iconutil", ["-c", "icns", iconset, "-o", join(output, "cmc_logo.icns")], { stdio: "inherit" })
   }
-  execFileSync("iconutil", ["-c", "icns", iconset, "-o", join(output, "cmc_logo.icns")], { stdio: "inherit" })
 
   const pngImages: Array<{ size: number; data: Buffer }> = []
+  if (process.platform === "win32") {
+    const psScript = `
+Add-Type -AssemblyName System.Drawing
+$img = [System.Drawing.Image]::FromFile('${source.replace(/'/g, "''")}')
+$sizes = @(${icoSizes.join(", ")})
+foreach ($size in $sizes) {
+  $bmp = New-Object System.Drawing.Bitmap $size, $size
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+  $g.DrawImage($img, 0, 0, $size, $size)
+  $target = Join-Path '${icoPngs.replace(/'/g, "''")}' "$size.png"
+  $bmp.Save($target, [System.Drawing.Imaging.ImageFormat]::Png)
+  $g.Dispose()
+  $bmp.Dispose()
+}
+$img.Dispose()
+`
+    execFileSync("powershell", ["-NoProfile", "-Command", psScript], { stdio: "ignore" })
+  } else {
+    for (const size of icoSizes) {
+      const path = join(icoPngs, `${size}.png`)
+      execFileSync("sips", ["-s", "format", "png", "-z", String(size), String(size), source, "--out", path], { stdio: "ignore" })
+    }
+  }
+
   for (const size of icoSizes) {
     const path = join(icoPngs, `${size}.png`)
-    execFileSync("sips", ["-s", "format", "png", "-z", String(size), String(size), source, "--out", path], { stdio: "ignore" })
     pngImages.push({ size, data: await readFile(path) })
   }
 
@@ -57,7 +83,7 @@ try {
     offset += data.length
   })
   await writeFile(join(output, "cmc_logo.ico"), Buffer.concat([header, ...pngImages.map(({ data }) => data)]))
-  console.log("Generated build/cmc_logo.icns and build/cmc_logo.ico")
+  console.log(process.platform === "darwin" ? "Generated build/cmc_logo.icns and build/cmc_logo.ico" : "Generated build/cmc_logo.ico")
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true })
 }

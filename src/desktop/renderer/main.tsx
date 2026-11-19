@@ -4,6 +4,7 @@ import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/mess
 import styles from "./App.module.scss"
 import { TitleBar } from "./components/layout/TitleBar/TitleBar"
 import { APP_CONFIG } from "./constants"
+import { useProjectSessions } from "./hooks/useProjectSessions"
 import { useToast } from "./hooks/useToast"
 import { LoginPage } from "./pages/LoginPage/LoginPage"
 import { NoProjectPage } from "./pages/NoProjectPage/NoProjectPage"
@@ -11,7 +12,32 @@ import { WorkspacePage } from "./pages/WorkspacePage/WorkspacePage"
 import "./styles/global.scss"
 import { ThemeProvider, type Theme } from "./theme/ThemeContext"
 import type { AuthState } from "../../contracts/auth"
-import { MOCK_ASSIGNED_PROJECTS } from "./data/mockData"
+
+interface SignedInAppProps {
+  username: string
+  onSignOut: () => void
+  onShowToast: (message: string) => void
+  onThemeChangeToast: (theme: Theme) => void
+}
+
+// Mounts on every sign-in, so the project list (and its backend sync) loads per login
+function SignedInApp({ username, onSignOut, onShowToast, onThemeChangeToast }: SignedInAppProps) {
+  const projectSessions = useProjectSessions(onShowToast)
+  const { isLoaded, loadError, assignedProjects } = projectSessions
+  if (isLoaded && !loadError && assignedProjects.length === 0) {
+    return <NoProjectPage username={username} onSignOut={onSignOut} onThemeChangeToast={onThemeChangeToast} />
+  }
+  return (
+    <WorkspacePage
+      username={username}
+      projectSessions={projectSessions}
+      onSignOut={onSignOut}
+      onShowToast={onShowToast}
+      onThemeChangeToast={onThemeChangeToast}
+    />
+  )
+}
+
 function AppContent() {
   const [authState, setAuthState] = useState<AuthState | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
@@ -65,16 +91,9 @@ function AppContent() {
           <div className={styles.authLoading} role="status">Checking sign-in status…</div>
         ) : !authState?.authenticated ? (
           <LoginPage onLoginSuccess={handleLoginSuccess} />
-        ) : (MOCK_ASSIGNED_PROJECTS[authState.username ?? ""] ?? []).length === 0 ? (
-          <NoProjectPage
-            username={authState.username ?? ""}
-            onSignOut={handleSignOut}
-            onThemeChangeToast={handleThemeChangeToast}
-          />
         ) : (
-          <WorkspacePage
+          <SignedInApp
             username={authState.username ?? ""}
-            assignedProjectIds={MOCK_ASSIGNED_PROJECTS[authState.username ?? ""] ?? []}
             onSignOut={handleSignOut}
             onShowToast={showToast}
             onThemeChangeToast={handleThemeChangeToast}

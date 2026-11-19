@@ -18,8 +18,23 @@ export class EnvConfigValidationError extends Error {
   }
 }
 
+declare const __APP_BUILD_ENV__: Partial<Record<keyof EnvConfig, string>> | undefined
+
+function resolveEnvSource(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const buildEnv = typeof __APP_BUILD_ENV__ !== "undefined" ? __APP_BUILD_ENV__ : undefined
+  if (!buildEnv || source !== process.env) return source
+  return {
+    ...source,
+    BACKEND_HOST: source.BACKEND_HOST || buildEnv.BACKEND_HOST,
+    MCP_REGISTRY_BASE_URL: source.MCP_REGISTRY_BASE_URL || buildEnv.MCP_REGISTRY_BASE_URL,
+    MCP_REGISTRY_API_VERSION: source.MCP_REGISTRY_API_VERSION || buildEnv.MCP_REGISTRY_API_VERSION,
+    UPDATE_FEED_URL: source.UPDATE_FEED_URL || buildEnv.UPDATE_FEED_URL,
+  }
+}
+
 /** Validate environment inputs only; consumers parse domain-specific JSON after injection. */
 export function validate(source: NodeJS.ProcessEnv = process.env): EnvConfig {
+  const effectiveSource = resolveEnvSource(source)
   const issues: string[] = []
   const run = <T>(field: string, validator: () => T, fallback: T): T => {
     try {
@@ -30,20 +45,20 @@ export function validate(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     }
   }
 
-  const backendHost = run("BACKEND_HOST", () => validateBackendHost(source.BACKEND_HOST), "")
+  const backendHost = run("BACKEND_HOST", () => validateBackendHost(effectiveSource.BACKEND_HOST), "")
   const mcpRegistryBaseUrl = run(
     "MCP_REGISTRY_BASE_URL",
-    () => validateMcpRegistryBaseUrl(source.MCP_REGISTRY_BASE_URL),
+    () => validateMcpRegistryBaseUrl(effectiveSource.MCP_REGISTRY_BASE_URL),
     MCP_REGISTRY_BASE_URL_DEFAULT,
   )
   const mcpRegistryApiVersion = run(
     "MCP_REGISTRY_API_VERSION",
-    () => validateMcpRegistryApiVersion(source.MCP_REGISTRY_API_VERSION),
+    () => validateMcpRegistryApiVersion(effectiveSource.MCP_REGISTRY_API_VERSION),
     MCP_REGISTRY_API_VERSION_DEFAULT,
   )
   const updateFeedUrl = run(
     "UPDATE_FEED_URL",
-    () => validateUpdateFeedUrl(source.UPDATE_FEED_URL),
+    () => validateUpdateFeedUrl(effectiveSource.UPDATE_FEED_URL),
     UPDATE_FEED_URL_DEFAULT,
   )
   if (issues.length) throw new EnvConfigValidationError(issues)

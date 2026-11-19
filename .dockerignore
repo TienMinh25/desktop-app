@@ -1,0 +1,17 @@
+node_modules
+out
+dist
+release
+coverage
+logs
+.git
+.idea
+.vscode
+.eslintcache
+.cache
+*.tsbuildinfo
+*.tgz
+*.lcov
+.DS_Store
+.env
+.env.*

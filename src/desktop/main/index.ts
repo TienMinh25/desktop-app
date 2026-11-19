@@ -19,6 +19,14 @@ import { LspSettingsStore } from "./lsp-settings-store"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
+import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
+import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
+import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
+import { fetchProjects } from "../../domain/projects/projects-client"
+import type { ProjectsListResult } from "../../contracts/projects"
+
+getSystemDispatcher()
 
 const { autoUpdater } = electronUpdater
 
@@ -102,6 +110,105 @@ async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown)
         } satisfies AuthRpcResponse)
     }
     return true
+}
+
+let db: Db | null = null
+let projectsHttp: BackendHttpClient | null = null
+
+function getDb(): Db {
+    if (!db) throw new Error("Database is not ready")
+    return db
+}
+
+function closeDb() {
+    db?.close()
+    db = null
+}
+
+// Project assignments change rarely: sync when the workspace opens (projects:list, after login or restore) and every 10 min
+// Random extra delay spreads 1500 clients that start at the same time
+const PROJECT_SYNC_INTERVAL_MS = 10 * 60_000
+const PROJECT_SYNC_JITTER_MS = 60_000
+let projectSync: { syncedAt: number | null; error: string | null } = { syncedAt: null, error: null }
+let projectSyncRun: Promise<void> | null = null
+let projectSyncTimer: NodeJS.Timeout | null = null
+
+function syncProjectsInBackground(): Promise<void> {
+    return projectSyncRun ??= (async () => {
+        try {
+            // Signed out is not a sync error, the next login triggers a sync
+            if (!(await getAuthService().getAuthState()).authenticated) return
+            syncProjects(getDb(), await fetchProjects(getProjectsHttp()))
+            projectSync = { syncedAt: Date.now(), error: null }
+        } catch (cause) {
+            projectSync = { ...projectSync, error: cause instanceof Error ? cause.message : String(cause) }
+        } finally {
+            projectSyncRun = null
+        }
+        // The DB is closed when a sync finishes during quit
+        if (db) broadcastProjects()
+    })()
+}
+
+function scheduleProjectSync() {
+    // No new round after quit closed the DB
+    if (!db) return
+    projectSyncTimer = setTimeout(() => {
+        void syncProjectsInBackground().finally(scheduleProjectSync)
+    }, PROJECT_SYNC_INTERVAL_MS + Math.random() * PROJECT_SYNC_JITTER_MS)
+}
+
+function getProjectsHttp(): BackendHttpClient {
+    if (!projectsHttp) throw new Error("Projects client is not ready")
+    return projectsHttp
+}
+
+function projectsListResult(): ProjectsListResult {
+    return { projects: listProjects(getDb()), ...projectSync }
+}
+
+function broadcastProjects() {
+    const result = projectsListResult()
+    for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.PROJECTS_CHANGED, result)
+    }
+}
+
+function requireTrustedSender(event: Electron.IpcMainInvokeEvent) {
+    if (!isTrustedAuthSender(event)) throw new Error("Untrusted IPC sender")
+}
+
+// Returns the cached list at once, the fresh list arrives as projects:changed
+ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
+    requireTrustedSender(event)
+    void syncProjectsInBackground()
+    return projectsListResult()
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
+    requireTrustedSender(event)
+    return listSessions(getDb(), requireText(projectId, "projectId"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
+    requireTrustedSender(event)
+    return createSession(getDb(), requireText(projectId, "projectId"), app.getPath("home"), requireText(title, "title"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, title: unknown) => {
+    requireTrustedSender(event)
+    renameSession(getDb(), requireText(sessionId, "sessionId"), requireText(title, "title"))
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
+    requireTrustedSender(event)
+    deleteSession(getDb(), requireText(sessionId, "sessionId"))
+})
+ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
+    requireTrustedSender(event)
+    return searchSidebar(getDb(), requireText(query, "query"))
+})
+
+// Renderer input is untrusted, reject empty values before writing
+function requireText(value: unknown, name: string): string {
+    if (typeof value !== "string" || !value.trim()) throw new Error(`${name} must be a non-empty string`)
+    return value.trim()
 }
 
 function broadcastUpdaterState(state: AppUpdaterState) {
@@ -372,6 +479,10 @@ app.whenReady().then(async () => {
         () => broadcastAuthState({ authenticated: false, username: null }),
         envConfig.BACKEND_HOST,
     )
+    projectsHttp = new BackendHttpClient(envConfig.BACKEND_HOST, authService)
+    db = openDb(ccodexDirectory)
+    migrate(db)
+    scheduleProjectSync()
     setupAutoUpdater()
     await ensureHarnessProcess()
     createWindow()
@@ -387,7 +498,11 @@ app.on("window-all-closed", () => {
         app.quit()
     }
 })
-app.on("before-quit", stopHarnessProcess)
+app.on("before-quit", () => {
+    stopHarnessProcess()
+    if (projectSyncTimer) clearTimeout(projectSyncTimer)
+    closeDb()
+})
 
 function assertNever(value: never): never {
     throw new Error(`Unhandled auth RPC request: ${JSON.stringify(value)}`)
