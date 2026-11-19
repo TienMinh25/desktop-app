@@ -1,22 +1,21 @@
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
-import { dbPath, migrate, syncProjects, type Db } from "../src/desktop/main/db"
+import { join } from "node:path"
+import { syncProjects } from "../src/desktop/main/project-session-store"
+import { configureConnection, migrate, type Db } from "../src/infrastructure/db/sqlite"
 
-// Usage: bun scripts/seed-dev-db.ts [ldap] [appName], appName "Electron" for bun run dev, "C-CodeX Desktop" for a build
-const ldap = process.argv[2] ?? "local"
-const appName = process.argv[3] ?? "Electron"
-const appData = process.platform === "win32" ? process.env.APPDATA!
-  : process.platform === "darwin" ? join(homedir(), "Library", "Application Support")
-  : join(homedir(), ".config")
-const path = dbPath(join(appData, appName), ldap)
-mkdirSync(dirname(path), { recursive: true })
+// Usage: bun scripts/seed-dev-db.ts [ccodexDirectory], default ~/.ccodex (the app DB)
+// bun cannot load better-sqlite3, so this opens the file with bun:sqlite instead of openDb
+const directory = process.argv[2] ?? join(homedir(), ".ccodex")
+mkdirSync(directory, { recursive: true })
+const path = join(directory, "ccodex.db")
 
 const db = new Database(path) as unknown as Db
+configureConnection(db)
 migrate(db)
 const now = Date.now()
-syncProjects(db, [{ id: "demo-1", name: "Demo: CMC Formbuilder" }, { id: "demo-2", name: "Demo: CRM" }], now)
+syncProjects(db, [{ id: "demo-1", key: "DEMO-1", name: "Demo: CMC Formbuilder" }, { id: "demo-2", key: "DEMO-2", name: "Demo: CRM" }], now)
 const insert = db.prepare(`
   INSERT OR REPLACE INTO sessions (id, project_id, directory, title, last_preview, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?)`)

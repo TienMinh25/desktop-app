@@ -13,3 +13,5 @@ logs
 *.tgz
 *.lcov
 .DS_Store
+.env
+.env.*

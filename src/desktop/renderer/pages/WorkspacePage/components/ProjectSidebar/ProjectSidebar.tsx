@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
-import type { ChatSession, ProjectItem } from "../../../../data/mockData"
+import type { SidebarSearchResult } from "../../../../../../contracts/projects"
+import { newestFirst, type ChatSession, type ProjectItem } from "../../../../hooks/useProjectSessions"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import styles from "./ProjectSidebar.module.scss"
 
@@ -43,35 +44,29 @@ export function ProjectSidebar({
   const [searchQuery, setSearchQuery] = useState("")
   const [openMenuSession, setOpenMenuSession] = useState<SessionMenuState | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
-  const [searchResult, setSearchResult] = useState<{ query: string; snippets: Map<string, string | null> } | null>(null)
   const sessionMenuRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(sessionMenuRef, () => setOpenMenuSession(null))
 
+  // Search runs in the DB (project name, chat title), the list may be too long to filter here
+  const query = searchQuery.trim()
+  const [hits, setHits] = useState<SidebarSearchResult | null>(null)
   useEffect(() => {
-    const query = searchQuery.trim()
-    if (!query) {
-      setSearchResult(null)
-      return
-    }
-    // Drop results of an older query
+    if (!query) return setHits(null)
     let stale = false
-    // Search runs on the main process, wait for typing to pause
     const timer = setTimeout(() => {
-      window.desktop.searchSessions(query).then(
-        (hits) => {
-          if (!stale) setSearchResult({ query, snippets: new Map(hits.map((hit) => [hit.id, hit.snippet])) })
-        },
-        () => {
-          if (!stale) setSearchResult(null)
-        },
-      )
-    }, 200)
+      window.desktop.searchSidebar(query).then((result) => !stale && setHits(result)).catch(() => !stale && setHits(null))
+    }, 150)
     return () => {
       stale = true
       clearTimeout(timer)
     }
-  }, [searchQuery, sessions])
+  }, [query])
+  // Until the first result arrives the full list stays on screen
+  const searching = !!query && !!hits
+  const sessionHit = (session: ChatSession) => !!hits?.sessionIds.includes(session.id)
+  const projectHit = (projectId: string) => !!hits?.projectIds.includes(projectId)
+  const hasMatch = !searching || projects.some((p) => projectHit(p.id) || sessions.some((s) => s.projectId === p.id && sessionHit(s)))
 
   const handleSessionMouseEnter = (event: MouseEvent<HTMLDivElement>) => {
     const copyEl = event.currentTarget.querySelector<HTMLElement>(`.${styles.treeSessionCopy}`)
@@ -149,7 +144,7 @@ export function ProjectSidebar({
         </svg>
         <input
           className={styles.searchInput}
-          placeholder="Search chats and messages..."
+          placeholder="Search projects and chats..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -164,17 +159,19 @@ export function ProjectSidebar({
       >
         {projects.length === 0 ? (
           <div className={styles.sidebarEmpty}>No assigned projects.</div>
-        ) : searchResult?.snippets.size === 0 ? (
-          <div className={styles.sidebarEmpty}>No chats match "{searchResult.query}".</div>
+        ) : !hasMatch ? (
+          <div className={styles.sidebarEmpty}>Nothing matches "{query}".</div>
         ) : (
           projects.map((project) => {
-            const isExpanded = !!expandedProjects[project.id]
+            // Show hits even in a collapsed project
+            const isExpanded = searching || !!expandedProjects[project.id]
             const isSelected = selectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
-              .sort((a, b) => a.projectOrder - b.projectOrder)
-              .filter((s) => !searchResult || searchResult.snippets.has(s.id))
-            if (searchResult && projectSessions.length === 0) return null
+              .sort(newestFirst)
+              // A project whose name matches keeps all its chats
+              .filter((s) => !searching || projectHit(project.id) || sessionHit(s))
+            if (searching && !projectHit(project.id) && projectSessions.length === 0) return null
 
             return (
               <section
@@ -230,7 +227,7 @@ export function ProjectSidebar({
                         />
                       </svg>
                     )}
-                    <span className={styles.projectName}>{project.name}</span>
+                    <span className={styles.projectName}>{highlight(project.name, query)}</span>
                   </button>
                 </div>
 
@@ -242,13 +239,12 @@ export function ProjectSidebar({
                       projectSessions.map((session) => {
                         const isSessionActive = session.id === activeSessionId
                         const isMenuOpen = openMenuSession?.sessionId === session.id
-                        const snippet = searchResult?.snippets.get(session.id)
                         return (
                           <div
                             key={session.id}
                             className={`${styles.treeSessionRow} ${
                               isSessionActive || isMenuOpen ? styles.active : ""
-                            } ${snippet ? styles.withSnippet : ""}`}
+                            }`}
                             title={`${session.title} · ${project.name}`}
                             onClick={() => onSelectSession(session.id)}
                             onMouseEnter={handleSessionMouseEnter}
@@ -265,6 +261,8 @@ export function ProjectSidebar({
                                   onClick={(e) => e.stopPropagation()}
                                   onFocus={(e) => e.currentTarget.select()}
                                   onKeyDown={(e) => {
+                                    // Enter also confirms an IME candidate (Vietnamese, CJK), not the rename
+                                    if (e.nativeEvent.isComposing) return
                                     if (e.key === "Escape") e.currentTarget.value = session.title
                                     if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur()
                                   }}
@@ -276,12 +274,7 @@ export function ProjectSidebar({
                                 />
                               ) : (
                                 <span className={styles.treeSessionTitle}>
-                                  {highlight(session.title, searchResult?.query)}
-                                </span>
-                              )}
-                              {snippet && (
-                                <span className={styles.treeSessionSnippet}>
-                                  {highlight(snippet, searchResult?.query)}
+                                  {highlight(session.title, query)}
                                 </span>
                               )}
                             </span>

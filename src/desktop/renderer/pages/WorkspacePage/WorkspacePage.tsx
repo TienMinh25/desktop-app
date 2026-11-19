@@ -3,18 +3,18 @@ import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
 import type { ReasoningEffort } from "../../constants"
 import type { ApprovalMode } from "../../../../contracts/permissions"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../../../contracts/message-types"
-import { useProjectSessions } from "../../hooks/useProjectSessions"
+import type { ProjectSessions } from "../../hooks/useProjectSessions"
 import type { Theme } from "../../theme/ThemeContext"
 import type { TodoItem } from "../../../../contracts/todos"
 import { ConversationStream } from "./components/ConversationStream/ConversationStream"
 import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
-import { NoProjectPage } from "../NoProjectPage/NoProjectPage"
 import { PromptBar } from "./components/PromptBar/PromptBar"
 import styles from "./WorkspacePage.module.scss"
 
 interface WorkspacePageProps {
   username: string
+  projectSessions: ProjectSessions
   onSignOut: () => void
   onShowToast: (message: string) => void
   onThemeChangeToast: (theme: Theme) => void
@@ -50,6 +50,7 @@ function assertNever(value: never): never {
 
 export function WorkspacePage({
   username,
+  projectSessions,
   onSignOut,
   onShowToast,
   onThemeChangeToast,
@@ -57,7 +58,6 @@ export function WorkspacePage({
   const {
     assignedProjects,
     loadError,
-    isLoaded,
     selectedProjectId,
     sessions,
     activeSessionId,
@@ -69,7 +69,7 @@ export function WorkspacePage({
     createNewChat,
     renameSession,
     deleteSession,
-  } = useProjectSessions(onShowToast)
+  } = projectSessions
 
   useEffect(() => {
     if (loadError) onShowToast(`Could not load projects from backend: ${loadError}`)
@@ -223,9 +223,6 @@ export function WorkspacePage({
     />
   )
 
-  if (isLoaded && !loadError && assignedProjects.length === 0) {
-    return <NoProjectPage username={username} onSignOut={onSignOut} onThemeChangeToast={onThemeChangeToast} />
-  }
 
   return (
     <MainLayout
