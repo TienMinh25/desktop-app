@@ -38,6 +38,7 @@ declare global {
     respondToQuestion: (questionRequestId: string, answer: string) => void
     subscribeHarnessEvents: (listener: (event: HarnessEvent) => void) => () => void
     listProjects: () => Promise<ProjectsListResult>
+    subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void) => () => void
     listSessions: (projectId: string) => Promise<SessionRow[]>
     searchSessions: (query: string) => Promise<SearchHit[]>
     createSession: (projectId: string, title: string) => Promise<SessionRow>

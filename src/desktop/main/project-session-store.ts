@@ -4,22 +4,23 @@ import type { Db } from "../../infrastructure/db/sqlite"
 
 // Backend list is the source of truth for membership and order, missing projects become 'removed'
 // Call only with a successful response, an empty list marks every project removed
-export function syncProjects(db: Db, projects: Pick<ProjectRow, "id" | "name">[], now = Date.now()): void {
+export function syncProjects(db: Db, projects: Pick<ProjectRow, "id" | "key" | "name">[], now = Date.now()): void {
   const upsert = db.prepare(`
-    INSERT INTO projects (id, name, member_status, sort_order, fetched_at) VALUES (?, ?, 'active', ?, ?)
-    ON CONFLICT (id) DO UPDATE SET name = excluded.name, member_status = 'active', sort_order = excluded.sort_order, fetched_at = excluded.fetched_at`)
+    INSERT INTO projects (id, key, name, member_status, sort_order, fetched_at) VALUES (?, ?, ?, 'active', ?, ?)
+    ON CONFLICT (id) DO UPDATE SET key = excluded.key, name = excluded.name, member_status = 'active',
+      sort_order = excluded.sort_order, fetched_at = excluded.fetched_at`)
   const markRemoved = db.prepare(`
     UPDATE projects SET member_status = 'removed', fetched_at = ?
     WHERE member_status = 'active' AND id NOT IN (SELECT value FROM json_each(?))`)
   db.transaction(() => {
-    projects.forEach((project, index) => upsert.run(project.id, project.name, index, now))
+    projects.forEach((project, index) => upsert.run(project.id, project.key, project.name, index, now))
     markRemoved.run(now, JSON.stringify(projects.map((project) => project.id)))
   }).immediate()
 }
 
 export function listProjects(db: Db): ProjectRow[] {
   return db.prepare(`
-    SELECT id, name, member_status AS memberStatus, fetched_at AS fetchedAt
+    SELECT id, key, name, member_status AS memberStatus, fetched_at AS fetchedAt
     FROM projects
     ORDER BY sort_order`).all() as ProjectRow[]
 }
@@ -27,7 +28,7 @@ export function listProjects(db: Db): ProjectRow[] {
 // Sidebar list only, messages load when a session is opened
 export function listSessions(db: Db, projectId: string): SessionRow[] {
   return db.prepare(`
-    SELECT id, title, last_preview AS lastPreview, updated_at AS updatedAt
+    SELECT id, project_id AS projectId, title, last_preview AS lastPreview, updated_at AS updatedAt
     FROM sessions
     WHERE project_id = ? AND deleted_at IS NULL
     ORDER BY updated_at DESC`).all(projectId) as SessionRow[]
@@ -38,7 +39,7 @@ export function createSession(db: Db, projectId: string, directory: string, titl
   db.prepare(`
     INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)`).run(id, projectId, directory, title, now, now)
-  return { id, title, lastPreview: null, updatedAt: now }
+  return { id, projectId, title, lastPreview: null, updatedAt: now }
 }
 
 // Keep updated_at so a rename does not move the chat to the top

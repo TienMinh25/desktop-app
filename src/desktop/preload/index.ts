@@ -66,6 +66,11 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_RENAME, sessionId, title),
   deleteSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSIONS_DELETE, sessionId),
+  subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void): (() => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, result: ProjectsListResult) => listener(result)
+    ipcRenderer.on(IPC_CHANNELS.PROJECTS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PROJECTS_CHANGED, handler)
+  },
   subscribeHarnessEvents: (listener: (event: HarnessEvent) => void): (() => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: HarnessEvent) => listener(event)
     ipcRenderer.on(IPC_CHANNELS.HARNESS_EVENT, handler)

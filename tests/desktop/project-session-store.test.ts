@@ -1,37 +1,38 @@
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSessions, syncProjects } from "../../src/desktop/main/project-session-store"
-import { migrate, type Db } from "../../src/infrastructure/db/sqlite"
+import { configureConnection, migrate, type Db } from "../../src/infrastructure/db/sqlite"
 
 function memoryDb(): Db {
   const db = new Database(":memory:") as unknown as Db
+  configureConnection(db)
   migrate(db)
   return db
 }
 
 test("listProjects keeps the backend order", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "9", name: "Zeta" }, { id: "3", name: "Alpha" }])
+  syncProjects(db, [{ id: "9", key: "P-9", name: "Zeta" }, { id: "3", key: "P-3", name: "Alpha" }])
   expect(listProjects(db).map((p) => p.id)).toEqual(["9", "3"])
-  syncProjects(db, [{ id: "3", name: "Alpha" }, { id: "9", name: "Zeta" }])
+  syncProjects(db, [{ id: "3", key: "P-3", name: "Alpha" }, { id: "9", key: "P-9", name: "Zeta" }])
   expect(listProjects(db).map((p) => p.id)).toEqual(["3", "9"])
 })
 
 test("syncProjects upserts, marks missing projects removed and reactivates them", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "101", name: "Formbuilder" }, { id: "102", name: "CRM" }], 1000)
-  syncProjects(db, [{ id: "101", name: "Formbuilder v2" }], 2000)
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }, { id: "102", key: "P-102", name: "CRM" }], 1000)
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder v2" }], 2000)
   expect(listProjects(db).map((p) => [p.id, p.name, p.memberStatus, p.fetchedAt])).toEqual([
     ["101", "Formbuilder v2", "active", 2000],
     ["102", "CRM", "removed", 2000],
   ])
-  syncProjects(db, [{ id: "101", name: "Formbuilder v2" }, { id: "102", name: "CRM" }], 3000)
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder v2" }, { id: "102", key: "P-102", name: "CRM" }], 3000)
   expect(listProjects(db).every((p) => p.memberStatus === "active")).toBe(true)
 })
 
 test("listSessions returns only live sessions of the project, newest first", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "101", name: "Formbuilder" }, { id: "102", name: "CRM" }], 1000)
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }, { id: "102", key: "P-102", name: "CRM" }], 1000)
   const insert = db.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at, deleted_at) VALUES (?, ?, '/repo', ?, 1, ?, ?)")
   insert.run("s1", "101", "Old", 10, null)
   insert.run("s2", "101", "New", 20, null)
@@ -42,7 +43,7 @@ test("listSessions returns only live sessions of the project, newest first", () 
 
 test("searchSessions matches title or message text and returns a snippet around the hit", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "101", name: "Formbuilder" }])
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
   const session = db.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES (?, '101', '/tmp', ?, 1, 1)")
   session.run("s1", "Fix logo")
   session.run("s2", "Untitled")
@@ -60,7 +61,7 @@ test("searchSessions matches title or message text and returns a snippet around 
 
 test("createSession, renameSession and deleteSession persist to the sidebar list", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "101", name: "Formbuilder" }])
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
   const created = createSession(db, "101", "/home", "New chat #1", 1000)
   expect(listSessions(db, "101")).toEqual([created])
   renameSession(db, created.id, "Fix logo")
@@ -72,7 +73,7 @@ test("createSession, renameSession and deleteSession persist to the sidebar list
 
 test("searchSessions caps the snippet length", () => {
   const db = memoryDb()
-  syncProjects(db, [{ id: "101", name: "Formbuilder" }])
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
   db.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES ('s1', '101', '/tmp', 'Log', 1, 1)").run()
   db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at) VALUES ('s1', 1, 'assistant', ?, 1)")
     .run(JSON.stringify({ v: 1, parts: [{ type: "text", text: `error found ${"x".repeat(5000)}` }] }))

@@ -1,27 +1,28 @@
 import Database from "better-sqlite3"
 import { mkdirSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 
 export type Db = Database.Database
 
-// One DB per machine, company policy allows one employee per machine
-export function ccodexDbPath(homeDir: string): string {
-  return join(homeDir, ".ccodex", "ccodex.db")
-}
-
-// Each process (main, harness) opens its own connection to the same file
-export function openDb(path: string): Db {
-  mkdirSync(dirname(path), { recursive: true })
-  const db = new Database(path)
-  migrate(db)
+// One DB per machine (one employee per machine by company policy), next to the other files in ~/.ccodex
+export function openDb(ccodexDirectory: string): Db {
+  mkdirSync(ccodexDirectory, { recursive: true })
+  const db = new Database(join(ccodexDirectory, "ccodex.db"))
+  configureConnection(db)
   return db
 }
 
-export function migrate(db: Db): void {
-  // WAL + busy_timeout: main and harness share this file
+// These pragmas hold per connection, so every process runs them on every open
+// WAL + busy_timeout let main and harness use the file at the same time, foreign_keys makes ON DELETE CASCADE work
+export function configureConnection(db: Db): void {
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")
+}
+
+// Only main calls this, once at startup before the harness opens the DB
+// user_version is a number stored in the SQLite file header: 0 = new file, N = schema version N
+// A new file gets the full schema, a later version adds a branch: if (version === N) { ALTER ...; user_version = N + 1 }
+export function migrate(db: Db): void {
   const { user_version } = db.prepare("PRAGMA user_version").get() as { user_version: number }
-  // New file only, add a branch per version when the schema changes
   if (user_version === 0) db.transaction(() => db.exec(SCHEMA)).immediate()
 }
 
@@ -29,6 +30,7 @@ export function migrate(db: Db): void {
 const SCHEMA = `
 CREATE TABLE projects (
   id             TEXT NOT NULL PRIMARY KEY,
+  key            TEXT NOT NULL,
   name           TEXT NOT NULL,
   member_status  TEXT NOT NULL DEFAULT 'active' CHECK (member_status IN ('active','removed')),
   sort_order     INTEGER NOT NULL DEFAULT 0,
@@ -53,7 +55,7 @@ CREATE TABLE session_config (
   provider_id     INTEGER NOT NULL,
   model_id        INTEGER NOT NULL,
   effort_id       INTEGER,
-  permission_mode TEXT NOT NULL DEFAULT 'ask'
+  permission_mode TEXT NOT NULL DEFAULT 'manual' CHECK (permission_mode IN ('manual','auto-safe','full-access'))
 ) STRICT;
 
 CREATE TABLE messages (

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
-import type { SessionRow } from "../../../contracts/projects"
+import type { ProjectsListResult, SessionRow } from "../../../contracts/projects"
 
 export interface ProjectItem {
   id: string
+  key: string
   name: string
 }
 
@@ -26,30 +27,42 @@ export function useProjectSessions(onError: (message: string) => void) {
   useEffect(() => {
     // StrictMode mounts twice in dev, only the live mount may create or set state
     let cancelled = false
-    void (async () => {
-      try {
-        const { projects, error } = await window.desktop.listProjects()
-        const active = projects.filter((project) => project.memberStatus === "active")
-        const sessionLists = await Promise.all(active.map((project) => window.desktop.listSessions(project.id)))
+    let firstChatCreated = false
+    const apply = async ({ projects, syncedAt, error }: ProjectsListResult) => {
+      // Fresh DB and the first sync still running, its projects:changed brings the list
+      if (projects.length === 0 && syncedAt === null && error === null) return
+      const active = projects.filter((project) => project.memberStatus === "active")
+      const sessionLists = await Promise.all(active.map((project) => window.desktop.listSessions(project.id)))
+      if (cancelled) return
+      // The prompt bar needs an active chat, same as selecting an empty project
+      if (!firstChatCreated && active[0] && sessionLists[0]?.length === 0) {
+        firstChatCreated = true
+        sessionLists[0] = [await window.desktop.createSession(active[0].id, "New chat #1")]
         if (cancelled) return
-        // The prompt bar needs an active chat, same as selecting an empty project
-        if (active[0] && sessionLists[0]?.length === 0) {
-          sessionLists[0] = [await window.desktop.createSession(active[0].id, "New chat #1")]
-        }
-        setLoadError(error)
-        setAssignedProjects(active.map((project) => ({ id: project.id, name: project.name })))
-        setExpandedProjects(Object.fromEntries(active.map((project) => [project.id, true])))
-        setSessions(sessionLists.flatMap((rows, index) => rows.map((row) => toChatSession(row, active[index]!.id))))
-        setSelectedProjectId(active[0]?.id ?? null)
-        setActiveSessionId(sessionLists[0]?.[0]?.id ?? null)
-      } catch (cause) {
-        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : String(cause))
-      } finally {
-        if (!cancelled) setIsLoaded(true)
       }
-    })()
+      const loaded = sessionLists.flat().map(toChatSession)
+      const firstProjectId = active[0]?.id ?? null
+      setLoadError(error)
+      setAssignedProjects(active.map(({ id, key, name }) => ({ id, key, name })))
+      setExpandedProjects((prev) => Object.fromEntries(active.map((project) => [project.id, prev[project.id] ?? true])))
+      setSessions(loaded)
+      // A sync every 10 min must not move the user, reset only when the project was unassigned
+      setSelectedProjectId((current) => (current && active.some((project) => project.id === current) ? current : firstProjectId))
+      setActiveSessionId((current) => (current && loaded.some((session) => session.id === current)
+        ? current
+        : loaded.find((session) => session.projectId === firstProjectId)?.id ?? null))
+      setIsLoaded(true)
+    }
+    const fail = (cause: unknown) => {
+      if (cancelled) return
+      setLoadError(cause instanceof Error ? cause.message : String(cause))
+      setIsLoaded(true)
+    }
+    const unsubscribe = window.desktop.subscribeProjectsChanged((result) => void apply(result).catch(fail))
+    window.desktop.listProjects().then(apply).catch(fail)
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [])
 
@@ -71,7 +84,7 @@ export function useProjectSessions(onError: (message: string) => void) {
     } catch (cause) {
       return reportError("create chat", cause)
     }
-    setSessions((prev) => [toChatSession(row, projectId), ...prev])
+    setSessions((prev) => [toChatSession(row), ...prev])
     setActiveSessionId(row.id)
   }
 
@@ -159,8 +172,8 @@ export function useProjectSessions(onError: (message: string) => void) {
 }
 
 // History is not loaded from the DB yet, so a reopened chat starts empty
-function toChatSession(row: SessionRow, projectId: string): ChatSession {
-  return { id: row.id, projectId, title: row.title, hasHistory: false, updatedAt: row.updatedAt }
+function toChatSession(row: SessionRow): ChatSession {
+  return { id: row.id, projectId: row.projectId, title: row.title, hasHistory: false, updatedAt: row.updatedAt }
 }
 
 export const newestFirst = (a: ChatSession, b: ChatSession) => b.updatedAt - a.updatedAt

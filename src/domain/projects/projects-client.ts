@@ -1,9 +1,20 @@
-import { DesktopProjectsSchema, type ProjectRow } from "../../contracts/projects"
+import { DesktopProjectsPageSchema, type DesktopProjectsPage, type ProjectRow } from "../../contracts/projects"
 import type { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 
-export async function fetchProjects(http: BackendHttpClient): Promise<Pick<ProjectRow, "id" | "name">[]> {
-  const body = await http.getJson<unknown>("/api/v2/projects?source=desktop-app", {}, AbortSignal.timeout(15_000))
-  const parsed = DesktopProjectsSchema.safeParse(body)
-  if (!parsed.success) throw new Error("Backend returned no valid project list")
-  return parsed.data.data.map((project) => ({ id: String(project.project_id), name: project.project_name }))
+const PAGE_SIZE = 20
+// Stops a backend that always answers has_next = true
+const MAX_PAGES = 50
+
+export async function fetchProjects(http: BackendHttpClient): Promise<Pick<ProjectRow, "id" | "key" | "name">[]> {
+  const projects: Pick<ProjectRow, "id" | "key" | "name">[] = []
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const body = await http.getJson<DesktopProjectsPage>(
+      `/api/v2/projects?source=desktop-app&page=${page}&page_size=${PAGE_SIZE}`, {}, AbortSignal.timeout(15_000))
+    // getJson only casts, the schema is the real check
+    const parsed = DesktopProjectsPageSchema.safeParse(body)
+    if (!parsed.success) throw new Error("Backend returned no valid project list")
+    projects.push(...parsed.data.data.map((project) => ({ id: String(project.id), key: project.key, name: project.name })))
+    if (!parsed.data.metadata.pagination.has_next) return projects
+  }
+  throw new Error(`Project list has more than ${MAX_PAGES} pages`)
 }

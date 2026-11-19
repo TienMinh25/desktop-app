@@ -1,18 +1,21 @@
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import { homedir } from "node:os"
-import { dirname } from "node:path"
+import { join } from "node:path"
 import { syncProjects } from "../src/desktop/main/project-session-store"
-import { ccodexDbPath, migrate, type Db } from "../src/infrastructure/db/sqlite"
+import { configureConnection, migrate, type Db } from "../src/infrastructure/db/sqlite"
 
-// Usage: bun scripts/seed-dev-db.ts [dbPath], default is the app DB in ~/.ccodex
-const path = process.argv[2] ?? ccodexDbPath(homedir())
-mkdirSync(dirname(path), { recursive: true })
+// Usage: bun scripts/seed-dev-db.ts [ccodexDirectory], default ~/.ccodex (the app DB)
+// bun cannot load better-sqlite3, so this opens the file with bun:sqlite instead of openDb
+const directory = process.argv[2] ?? join(homedir(), ".ccodex")
+mkdirSync(directory, { recursive: true })
+const path = join(directory, "ccodex.db")
 
 const db = new Database(path) as unknown as Db
+configureConnection(db)
 migrate(db)
 const now = Date.now()
-syncProjects(db, [{ id: "demo-1", name: "Demo: CMC Formbuilder" }, { id: "demo-2", name: "Demo: CRM" }], now)
+syncProjects(db, [{ id: "demo-1", key: "DEMO-1", name: "Demo: CMC Formbuilder" }, { id: "demo-2", key: "DEMO-2", name: "Demo: CRM" }], now)
 const insert = db.prepare(`
   INSERT OR REPLACE INTO sessions (id, project_id, directory, title, last_preview, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?)`)
