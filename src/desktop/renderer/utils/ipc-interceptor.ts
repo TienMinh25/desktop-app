@@ -1,7 +1,6 @@
 import { IPC_CHANNELS } from "../../constants/ipcChannels"
+import { toast, useDebugLogStore } from "../stores"
 import { classifyAuthError, formatGeneralErrorMessage } from "./error-message"
-import { appendDebugLog } from "./log-store"
-import { toast } from "./toast"
 
 interface IpcErrorEventDetail {
   channel: string
@@ -34,7 +33,7 @@ export function installDesktopBridgeInterceptor(): () => void {
       return
     }
 
-    appendDebugLog({
+    useDebugLogStore.getState().appendLog({
       category: "ipc",
       level: "error",
       message: `[IPC !!] ${detail.channel}: ${detail.message}`,
@@ -56,7 +55,7 @@ export function installDesktopBridgeInterceptor(): () => void {
 
   if (window.desktop && typeof window.desktop.subscribeLogEvents === "function") {
     const unsubLogs = window.desktop.subscribeLogEvents((entry) => {
-      appendDebugLog({
+      useDebugLogStore.getState().appendLog({
         category: entry.category,
         level: entry.level,
         message: entry.message,

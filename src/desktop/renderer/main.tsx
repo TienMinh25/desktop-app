@@ -1,149 +1,83 @@
-import { StrictMode, useEffect, useState } from "react"
+import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/message-types"
 import styles from "./App.module.scss"
 import { TitleBar } from "./components/layout/TitleBar/TitleBar"
 import { ConfirmModal } from "./components/ui/ConfirmModal/ConfirmModal"
 import { DebugLogViewer } from "./components/ui/DebugLogModal/DebugLogModal"
-import { APP_CONFIG, STORAGE_KEYS } from "./constants"
-import { useProjectSessions } from "./hooks/useProjectSessions"
-import { useToast } from "./hooks/useToast"
+import { APP_CONFIG } from "./constants"
 import { LoginPage } from "./pages/LoginPage/LoginPage"
 import { NoProjectPage } from "./pages/NoProjectPage/NoProjectPage"
 import { WorkspacePage } from "./pages/WorkspacePage/WorkspacePage"
+import {
+  hasAcceptedCurrentTerms,
+  toast,
+  useAuthStore,
+  useChatStore,
+  useCustomizeStore,
+  useProjectStore,
+  useThemeStore,
+  useToastStore,
+} from "./stores"
 import "./styles/global.scss"
-import { ThemeProvider, type Theme } from "./theme/ThemeContext"
-import { formatGeneralErrorMessage } from "./utils/error-message"
 import { installDesktopBridgeInterceptor } from "./utils/ipc-interceptor"
-import type { AuthState } from "../../contracts/auth"
 
-const CURRENT_TERMS_TOKEN = `${APP_CONFIG.TERMS_VERSION}:${APP_CONFIG.PRIVACY_VERSION}`
+// Mounts on every sign-in, so project sync & chat runtime reset cleanly per session
+function SignedInApp() {
+  const initProjects = useProjectStore((state) => state.initProjects)
+  const resetProjects = useProjectStore((state) => state.reset)
+  const resetChat = useChatStore((state) => state.reset)
+  const resetCustomize = useCustomizeStore((state) => state.reset)
+  const isLoaded = useProjectStore((state) => state.isLoaded)
+  const loadError = useProjectStore((state) => state.loadError)
+  const assignedProjects = useProjectStore((state) => state.assignedProjects)
 
-function getAcceptedTermsMap(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.ACCEPTED_TERMS_VERSION)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
-}
+  useEffect(() => {
+    const unsubscribe = initProjects()
+    return () => {
+      unsubscribe()
+      resetProjects()
+      resetChat()
+      resetCustomize()
+    }
+  }, [initProjects, resetProjects, resetChat, resetCustomize])
 
-function hasAcceptedCurrentTerms(username: string | null): boolean {
-  if (!username) return false
-  return getAcceptedTermsMap()[username] === CURRENT_TERMS_TOKEN
-}
-
-function saveAcceptedCurrentTerms(username: string): void {
-  try {
-    const map = getAcceptedTermsMap()
-    map[username] = CURRENT_TERMS_TOKEN
-    localStorage.setItem(STORAGE_KEYS.ACCEPTED_TERMS_VERSION, JSON.stringify(map))
-  } catch {
-    // Ignore storage errors
-  }
-}
-
-interface SignedInAppProps {
-  username: string
-  onSignOut: () => void
-  onShowToast: (message: string) => void
-  onThemeChangeToast: (theme: Theme) => void
-}
-
-// Mounts on every sign-in, so the project list (and its backend sync) loads per login
-function SignedInApp({ username, onSignOut, onShowToast, onThemeChangeToast }: SignedInAppProps) {
-  const projectSessions = useProjectSessions(onShowToast)
-  const { isLoaded, loadError, assignedProjects } = projectSessions
   if (isLoaded && !loadError && assignedProjects.length === 0) {
-    return <NoProjectPage username={username} onSignOut={onSignOut} onThemeChangeToast={onThemeChangeToast} />
+    return <NoProjectPage />
   }
-  return (
-    <WorkspacePage
-      username={username}
-      projectSessions={projectSessions}
-      onSignOut={onSignOut}
-      onShowToast={onShowToast}
-      onThemeChangeToast={onThemeChangeToast}
-    />
-  )
+  return <WorkspacePage />
 }
 
 function AppContent() {
-  const [authState, setAuthState] = useState<AuthState | null>(null)
-  const [isAuthLoading, setIsAuthLoading] = useState(true)
-  const [, setTermsRevision] = useState(0)
-  const [termsDeclinedError, setTermsDeclinedError] = useState<string | null>(null)
-  const [loginResetCounter, setLoginResetCounter] = useState(0)
-  const [isSignOutConfirmOpen, setIsSignOutConfirmOpen] = useState(false)
-  const { activeToast, showToast, dismissToast } = useToast()
+  const authState = useAuthStore((state) => state.authState)
+  const isAuthLoading = useAuthStore((state) => state.isAuthLoading)
+  useAuthStore((state) => state.termsRevision)
+  const isSignOutConfirmOpen = useAuthStore((state) => state.isSignOutConfirmOpen)
+  const initAuth = useAuthStore((state) => state.initAuth)
+  const confirmSignOut = useAuthStore((state) => state.confirmSignOut)
+  const closeSignOutConfirm = useAuthStore((state) => state.closeSignOutConfirm)
+
+  const theme = useThemeStore((state) => state.theme)
+  const activeToast = useToastStore((state) => state.activeToast)
+  const dismissToast = useToastStore((state) => state.dismissToast)
 
   useEffect(() => {
-    return installDesktopBridgeInterceptor()
-  }, [])
+    document.documentElement.setAttribute("data-theme", theme)
+  }, [theme])
 
-  useEffect(() => {
-    let active = true
-    let receivedAuthEvent = false
-    const unsubscribe = window.desktop.subscribeAuthState((state) => {
-      receivedAuthEvent = true
-      setAuthState(state)
-      setIsAuthLoading(false)
-    })
-    void window.desktop.getAuthState().then((state) => {
-      if (active && !receivedAuthEvent) {
-        setAuthState(state)
-        setIsAuthLoading(false)
-      }
-    }).catch(() => {
-      if (active) setIsAuthLoading(false)
-    })
-    return () => {
-      active = false
-      unsubscribe()
-    }
-  }, [])
+  useEffect(() => installDesktopBridgeInterceptor(), [])
+  useEffect(() => initAuth(), [initAuth])
 
   useEffect(() => {
     const unsubscribe = window.desktop.subscribeHarnessEvents((event) => {
-      if (event.type === HARNESS_EVENT_TYPES.PONG) showToast("Harness connected")
+      if (event.type === HARNESS_EVENT_TYPES.PONG) toast.success("Harness connected")
     })
-    window.desktop.sendHarnessCommand({ type: HARNESS_COMMAND_TYPES.PING, requestId: crypto.randomUUID() })
+    window.desktop.sendHarnessCommand({
+      type: HARNESS_COMMAND_TYPES.PING,
+      requestId: crypto.randomUUID(),
+    })
     return unsubscribe
-  }, [showToast])
-  const handleLoginSuccess = (username: string) => {
-    setTermsDeclinedError(null)
-    setAuthState({ authenticated: true, username })
-  }
-
-  const handleAgreeTerms = () => {
-    if (authState?.username) {
-      saveAcceptedCurrentTerms(authState.username)
-      setTermsRevision((prev) => prev + 1)
-    }
-  }
-
-  const handleDisagreeTerms = () => {
-    setLoginResetCounter((prev) => prev + 1)
-    setTermsDeclinedError(
-      "You must agree to the Terms of Use and Privacy Policy to access C-CodeX Assistant.",
-    )
-    void window.desktop.logout()
-      .catch(() => {})
-      .finally(() => setAuthState({ authenticated: false, username: null }))
-  }
-
-  const performSignOut = () => {
-    setIsSignOutConfirmOpen(false)
-    void window.desktop.logout()
-      .catch((error) => showToast(formatGeneralErrorMessage(error, "Signed out locally")))
-      .finally(() => setAuthState({ authenticated: false, username: null }))
-  }
-
-  const handleThemeChangeToast = (theme: Theme) => {
-    showToast(`${theme === "light" ? "Light" : "Dark"} mode enabled.`)
-  }
+  }, [])
 
   const needsTermsAcceptance = Boolean(
     authState?.authenticated && !hasAcceptedCurrentTerms(authState.username),
@@ -151,27 +85,16 @@ function AppContent() {
 
   return (
     <div className={styles.appWindow}>
-      <TitleBar title={APP_CONFIG.APP_TITLE} onShowToast={showToast} />
+      <TitleBar title={APP_CONFIG.APP_TITLE} />
       <div className={styles.viewStage}>
         {isAuthLoading ? (
           <div className={styles.authLoading} role="status">Checking sign-in status…</div>
         ) : !authState?.authenticated || needsTermsAcceptance ? (
-          <LoginPage
-            onLoginSuccess={handleLoginSuccess}
-            showTermsModal={needsTermsAcceptance}
-            onAgreeTerms={handleAgreeTerms}
-            onDisagreeTerms={handleDisagreeTerms}
-            externalError={termsDeclinedError}
-            resetCounter={loginResetCounter}
-          />
+          <LoginPage showTermsModal={needsTermsAcceptance} />
         ) : (
-          <SignedInApp
-            username={authState.username ?? ""}
-            onSignOut={() => setIsSignOutConfirmOpen(true)}
-            onShowToast={showToast}
-            onThemeChangeToast={handleThemeChangeToast}
-          />
+          <SignedInApp />
         )}
+
         {isSignOutConfirmOpen && (
           <ConfirmModal
             title="Sign out"
@@ -179,11 +102,13 @@ function AppContent() {
             confirmLabel="Sign out"
             cancelLabel="Cancel"
             variant="danger"
-            onConfirm={performSignOut}
-            onCancel={() => setIsSignOutConfirmOpen(false)}
+            onConfirm={confirmSignOut}
+            onCancel={closeSignOutConfirm}
           />
         )}
+
         <DebugLogViewer />
+
         {activeToast && (
           <div
             className={`${styles.appToast} ${
@@ -231,10 +156,9 @@ function AppContent() {
     </div>
   )
 }
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <AppContent />
   </StrictMode>,
 )

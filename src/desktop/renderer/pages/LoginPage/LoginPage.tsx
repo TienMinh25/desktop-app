@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import cmcLogoLogin from "../../assets/cmc_global_login.jpg"
 import { APP_CONFIG } from "../../constants"
+import { useAuthStore } from "../../stores"
 import { classifyAuthError } from "../../utils/error-message"
 import { TermsModal } from "./components/TermsModal"
 import styles from "./LoginPage.module.scss"
@@ -9,22 +10,15 @@ const MAX_USERNAME_LENGTH = 20
 const MAX_PASSWORD_LENGTH = 50
 
 interface LoginPageProps {
-  onLoginSuccess: (username: string) => void
   showTermsModal?: boolean
-  onAgreeTerms?: () => void
-  onDisagreeTerms?: () => void
-  externalError?: string | null
-  resetCounter?: number
 }
 
-export function LoginPage({
-  onLoginSuccess,
-  showTermsModal = false,
-  onAgreeTerms,
-  onDisagreeTerms,
-  externalError = null,
-  resetCounter = 0,
-}: LoginPageProps) {
+export function LoginPage({ showTermsModal = false }: LoginPageProps) {
+  const loginSuccess = useAuthStore((state) => state.loginSuccess)
+  const agreeTerms = useAuthStore((state) => state.agreeTerms)
+  const disagreeTerms = useAuthStore((state) => state.disagreeTerms)
+  const externalError = useAuthStore((state) => state.termsDeclinedError)
+  const resetCounter = useAuthStore((state) => state.loginResetCounter)
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -109,7 +103,7 @@ export function LoginPage({
     try {
       await window.desktop.login(trimmed, password)
       setPassword("")
-      onLoginSuccess(trimmed)
+      loginSuccess(trimmed)
     } catch (error) {
       const { message, isGlobalToast } = classifyAuthError(error)
       if (!isGlobalToast) {
@@ -339,9 +333,7 @@ export function LoginPage({
         </div>
       </div>
 
-      {showTermsModal && onAgreeTerms && onDisagreeTerms && (
-        <TermsModal onAgree={onAgreeTerms} onDisagree={onDisagreeTerms} />
-      )}
+      {showTermsModal && <TermsModal onAgree={agreeTerms} onDisagree={disagreeTerms} />}
     </div>
   )
 }
