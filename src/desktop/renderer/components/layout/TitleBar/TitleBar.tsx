@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import { APP_CONFIG } from "../../../constants"
 import { useClickOutside } from "../../../hooks/useClickOutside"
-import { useTheme } from "../../../theme/ThemeContext"
+import { toast, useThemeStore } from "../../../stores"
 import styles from "./TitleBar.module.scss"
 
 interface TitleBarProps {
   title?: string
-  onShowToast: (message: string) => void
 }
 
-export function TitleBar({ title = APP_CONFIG.APP_TITLE, onShowToast }: TitleBarProps) {
-  const { theme } = useTheme()
+export function TitleBar({ title = APP_CONFIG.APP_TITLE }: TitleBarProps) {
+  const theme = useThemeStore((state) => state.theme)
   const isLight = theme === "light"
   const isMac =
     (window.desktop?.platform ?? "") === "darwin" ||
@@ -34,13 +33,13 @@ export function TitleBar({ title = APP_CONFIG.APP_TITLE, onShowToast }: TitleBar
       } else if (state.status === "downloaded") {
         setUpdateVersion(state.version)
         setUpdateState("started")
-        onShowToast(`Version ${state.version} downloaded. Ready to restart and install.`)
+        toast.success(`Version ${state.version} downloaded. Ready to restart and install.`)
       } else if (state.status === "error") {
         setUpdateState("idle")
-        onShowToast(`Update check failed: ${state.message}`)
+        toast.error(`Update check failed: ${state.message}`)
       }
     })
-  }, [onShowToast])
+  }, [])
 
   const handleStartUpdate = async () => {
     if (updateState === "started") {
@@ -49,7 +48,7 @@ export function TitleBar({ title = APP_CONFIG.APP_TITLE, onShowToast }: TitleBar
     }
     setUpdateState("starting")
     setPanelOpen(false)
-    onShowToast("Update started. C-CodeX will restart after installation.")
+    toast.info("Update started. C-CodeX will restart after installation.")
     try {
       if (window.desktop?.startUpdateDownload) {
         await window.desktop.startUpdateDownload()

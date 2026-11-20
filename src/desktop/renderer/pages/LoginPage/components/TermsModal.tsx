@@ -1,5 +1,6 @@
 import { useRef, useState } from "react"
 import { APP_CONFIG } from "../../../constants"
+import { useModalFocusLock } from "../../../hooks/useModalFocusLock"
 import styles from "./TermsModal.module.scss"
 
 interface TermsModalProps {
@@ -8,10 +9,13 @@ interface TermsModalProps {
 }
 
 export function TermsModal({ onAgree, onDisagree }: TermsModalProps) {
+  const cardRef = useRef<HTMLDivElement>(null)
   const scrollboxRef = useRef<HTMLDivElement>(null)
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false)
   const [agreedTerms, setAgreedTerms] = useState(false)
   const [agreedPrivacy, setAgreedPrivacy] = useState(false)
+
+  useModalFocusLock(cardRef, { initialFocusRef: scrollboxRef })
 
   const handleScroll = () => {
     if (hasScrolledToBottom) return
@@ -26,7 +30,13 @@ export function TermsModal({ onAgree, onDisagree }: TermsModalProps) {
 
   return (
     <div className={styles.overlay}>
-      <div className={styles.card} role="dialog" aria-labelledby="termsHeading">
+      <div
+        ref={cardRef}
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="termsHeading"
+      >
         <div className={styles.headerRow}>
           <div className={styles.titleGroup}>
             <span id="termsHeading" className={styles.title}>
@@ -55,7 +65,7 @@ export function TermsModal({ onAgree, onDisagree }: TermsModalProps) {
           </div>
         </div>
 
-        <div className={styles.scrollbox} ref={scrollboxRef} onScroll={handleScroll}>
+        <div className={styles.scrollbox} ref={scrollboxRef} tabIndex={0} onScroll={handleScroll}>
           <div className={styles.sectionTitle}>Terms and Conditions for C-CodeX Assistant</div>
           <p>
             <strong>1. Introduction</strong>

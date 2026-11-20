@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { createApiSuccessEnvelopeSchema } from "./api-response"
 
 export const AuthCredentialsSchema = z.object({
   username: z.string().trim().min(1).max(320),
@@ -10,10 +11,7 @@ export const AuthTokenPairSchema = z.object({
   refresh_token: z.string().min(1),
 }).strict()
 
-export const AuthSuccessEnvelopeSchema = z.object({
-  data: AuthTokenPairSchema,
-  metadata: z.object({ code: z.literal("0000") }).loose(),
-}).loose()
+export const AuthSuccessEnvelopeSchema = createApiSuccessEnvelopeSchema(AuthTokenPairSchema)
 
 export const AuthStateSchema = z.object({
   authenticated: z.boolean(),
@@ -37,3 +35,8 @@ export type AuthTokenPair = z.infer<typeof AuthTokenPairSchema>
 export type AuthState = z.infer<typeof AuthStateSchema>
 export type AuthRpcRequest = z.infer<typeof AuthRpcRequestSchema>
 export type AuthRpcResponse = z.infer<typeof AuthRpcResponseSchema>
+
+export const AUTH_SERVICE_UNAVAILABLE_MESSAGE =
+  "Authentication service temporarily unavailable. Please check your network connection and try again."
+export const AUTH_INVALID_CREDENTIALS_MESSAGE =
+  "Invalid username or password. Please try again."

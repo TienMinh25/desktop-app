@@ -1,13 +1,9 @@
 import { useState, type PointerEvent, type ReactNode } from "react"
-import type { Theme } from "../../../theme/ThemeContext"
 import { SidebarFooter } from "../SidebarFooter/SidebarFooter"
 import styles from "./Sidebar.module.scss"
 
 interface SidebarProps {
-  username: string
   role?: string
-  onSignOut: () => void
-  onThemeChangeToast?: (theme: Theme) => void
   children: ReactNode
 }
 
@@ -15,13 +11,7 @@ const DEFAULT_SIDEBAR_WIDTH = 250
 const MIN_SIDEBAR_WIDTH = 210
 const MAX_SIDEBAR_WIDTH = 420
 
-export function Sidebar({
-  username,
-  role,
-  onSignOut,
-  onThemeChangeToast,
-  children,
-}: SidebarProps) {
+export function Sidebar({ role, children }: SidebarProps) {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isResizing, setIsResizing] = useState(false)
 
@@ -51,12 +41,7 @@ export function Sidebar({
   return (
     <aside className={styles.sidebar} style={{ width: `${sidebarWidth}px` }}>
       <div className={styles.sidebarBody}>{children}</div>
-      <SidebarFooter
-        username={username}
-        role={role}
-        onSignOut={onSignOut}
-        onThemeChangeToast={onThemeChangeToast}
-      />
+      <SidebarFooter role={role} />
       <div
         className={`${styles.resizeHandle} ${isResizing ? styles.isResizing : ""}`}
         onPointerDown={handleResizePointerDown}

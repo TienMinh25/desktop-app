@@ -1,7 +1,19 @@
 import { fetch as undiciFetch } from "undici"
 import type { Response as UndiciResponse } from "undici-types"
-import { AuthCredentialsSchema, AuthSuccessEnvelopeSchema, type AuthState, type AuthTokenPair } from "../../contracts/auth"
+import { API_RESPONSE_CODES, parseApiErrorEnvelope } from "../../contracts/api-response"
+import {
+  AUTH_INVALID_CREDENTIALS_MESSAGE,
+  AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+  AuthCredentialsSchema,
+  AuthSuccessEnvelopeSchema,
+  type AuthState,
+  type AuthTokenPair,
+} from "../../contracts/auth"
+import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
+import { logger } from "../../infrastructure/logging/logger"
 import { AuthSessionStore } from "./auth-session-store"
+
+const AUTH_REQUEST_TIMEOUT_MS = 15_000
 
 export class AuthServiceError extends Error {
   constructor(
@@ -128,46 +140,75 @@ export class AuthService {
   }
 
   private async requestTokenPair(path: string, body: unknown): Promise<AuthTokenPair> {
+    const startedAt = Date.now()
+    const url = `${this.requireApiBase()}${path}`
+    logger.apiRequest("POST", url, body)
+
     let response: Awaited<ReturnType<typeof undiciFetch>>
     try {
-      response = await this.fetchImpl(`${this.requireApiBase()}${path}`, {
+      response = await this.fetchImpl(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+        dispatcher: getSystemDispatcher(),
       })
     } catch (error) {
-      throw new AuthServiceError(error instanceof Error ? error.message : "Backend request failed", null)
+      logger.apiError("POST", url, error, Date.now() - startedAt)
+      if (error instanceof AuthServiceError) throw error
+      throw new AuthServiceError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, null)
     }
+
+    logger.apiResponse("POST", url, response.status, Date.now() - startedAt)
 
     const responseBody = await readJsonOrNull(response)
     if (!response.ok) {
-      const message = getErrorMessage(responseBody) ?? `Authentication request returned ${response.status}`
+      const apiError = parseApiErrorEnvelope(responseBody)
+      if (response.status >= 500 || apiError.code === API_RESPONSE_CODES.INTERNAL_ERROR) {
+        throw new AuthServiceError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, response.status, "request-failed")
+      }
+      const isAuthError =
+        response.status === 401 || apiError.code === API_RESPONSE_CODES.AUTHENTICATION_REQUIRED
+      const defaultMessage = isAuthError
+        ? AUTH_INVALID_CREDENTIALS_MESSAGE
+        : "Sign in failed. Please try again."
       throw new AuthServiceError(
-        message,
+        apiError.message ?? defaultMessage,
         response.status,
-        response.status === 401 ? "unauthenticated" : "request-failed",
+        isAuthError ? "unauthenticated" : "request-failed",
       )
     }
 
     const parsed = AuthSuccessEnvelopeSchema.safeParse(responseBody)
     if (!parsed.success) {
-      throw new AuthServiceError("Backend returned an invalid authentication response", response.status)
+      throw new AuthServiceError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, response.status)
     }
     return parsed.data.data
   }
 
   private async requestLogout(accessToken: string): Promise<boolean> {
-    const response = await this.fetchImpl(`${this.requireApiBase()}/auth/logout`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    await response.body?.cancel().catch(() => {})
-    return response.ok
+    const startedAt = Date.now()
+    const url = `${this.requireApiBase()}/auth/logout`
+    logger.apiRequest("POST", url)
+    try {
+      const response = await this.fetchImpl(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(AUTH_REQUEST_TIMEOUT_MS),
+        dispatcher: getSystemDispatcher(),
+      })
+      logger.apiResponse("POST", url, response.status, Date.now() - startedAt)
+      await response.body?.cancel().catch(() => {})
+      return response.ok
+    } catch (error) {
+      logger.apiError("POST", url, error, Date.now() - startedAt)
+      throw error
+    }
   }
 
   private requireApiBase(): string {
     if (!this.backendHost) {
-      throw new AuthServiceError("BACKEND_HOST is not configured", null)
+      throw new AuthServiceError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, null)
     }
     return `${this.backendHost}/api/v2`
   }
@@ -179,13 +220,6 @@ async function readJsonOrNull(response: UndiciResponse): Promise<unknown> {
   } catch {
     return null
   }
-}
-
-function getErrorMessage(value: unknown): string | null {
-  if (!value || typeof value !== "object") return null
-  if ("error" in value && typeof value.error === "string") return value.error
-  if ("message" in value && typeof value.message === "string") return value.message
-  return null
 }
 
 function unauthenticatedError(message: string): AuthServiceError {

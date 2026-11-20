@@ -4,7 +4,12 @@ const MCP_REGISTRY_BASE_URL_DEFAULT = "https://registry.modelcontextprotocol.io"
 const MCP_REGISTRY_API_VERSION_DEFAULT = "v0.1"
 const UPDATE_FEED_URL_DEFAULT = "https://updates.ccodex.com/releases"
 
+export type AppEnvironment = "sit" | "uat" | "prod"
+
 export interface EnvConfig {
+  readonly APP_ENV: AppEnvironment
+  readonly ENABLE_API_LOG: boolean
+  readonly ENABLE_IPC_LOG: boolean
   readonly BACKEND_HOST: string
   readonly MCP_REGISTRY_BASE_URL: string
   readonly MCP_REGISTRY_API_VERSION: string
@@ -25,6 +30,9 @@ function resolveEnvSource(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (!buildEnv || source !== process.env) return source
   return {
     ...source,
+    APP_ENV: source.APP_ENV || buildEnv.APP_ENV,
+    ENABLE_API_LOG: source.ENABLE_API_LOG || buildEnv.ENABLE_API_LOG,
+    ENABLE_IPC_LOG: source.ENABLE_IPC_LOG || buildEnv.ENABLE_IPC_LOG,
     BACKEND_HOST: source.BACKEND_HOST || buildEnv.BACKEND_HOST,
     MCP_REGISTRY_BASE_URL: source.MCP_REGISTRY_BASE_URL || buildEnv.MCP_REGISTRY_BASE_URL,
     MCP_REGISTRY_API_VERSION: source.MCP_REGISTRY_API_VERSION || buildEnv.MCP_REGISTRY_API_VERSION,
@@ -45,6 +53,18 @@ export function validate(source: NodeJS.ProcessEnv = process.env): EnvConfig {
     }
   }
 
+  const appEnv = run("APP_ENV", () => validateAppEnv(effectiveSource.APP_ENV), "sit")
+  const defaultLogEnabled = appEnv !== "prod"
+  const enableApiLog = run(
+    "ENABLE_API_LOG",
+    () => validateBooleanFlag(effectiveSource.ENABLE_API_LOG, defaultLogEnabled),
+    defaultLogEnabled,
+  )
+  const enableIpcLog = run(
+    "ENABLE_IPC_LOG",
+    () => validateBooleanFlag(effectiveSource.ENABLE_IPC_LOG, defaultLogEnabled),
+    defaultLogEnabled,
+  )
   const backendHost = run("BACKEND_HOST", () => validateBackendHost(effectiveSource.BACKEND_HOST), "")
   const mcpRegistryBaseUrl = run(
     "MCP_REGISTRY_BASE_URL",
@@ -64,11 +84,30 @@ export function validate(source: NodeJS.ProcessEnv = process.env): EnvConfig {
   if (issues.length) throw new EnvConfigValidationError(issues)
 
   return Object.freeze({
+    APP_ENV: appEnv,
+    ENABLE_API_LOG: enableApiLog,
+    ENABLE_IPC_LOG: enableIpcLog,
     BACKEND_HOST: backendHost,
     MCP_REGISTRY_BASE_URL: mcpRegistryBaseUrl,
     MCP_REGISTRY_API_VERSION: mcpRegistryApiVersion,
     UPDATE_FEED_URL: updateFeedUrl,
   })
+}
+
+function validateAppEnv(raw: string | undefined): AppEnvironment {
+  const normalized = raw?.trim().toLowerCase()
+  if (!normalized || normalized === "development" || normalized === "dev") return "sit"
+  if (normalized === "production") return "prod"
+  if (normalized === "sit" || normalized === "uat" || normalized === "prod") return normalized
+  throw new Error("expected sit, uat, or prod")
+}
+
+function validateBooleanFlag(raw: string | undefined, fallback: boolean): boolean {
+  const normalized = raw?.trim().toLowerCase()
+  if (!normalized) return fallback
+  if (normalized === "true" || normalized === "1") return true
+  if (normalized === "false" || normalized === "0") return false
+  throw new Error("expected true or false")
 }
 
 function validateBackendHost(raw: string | undefined): string {

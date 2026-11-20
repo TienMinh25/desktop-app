@@ -1,84 +1,46 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react"
 import type { ApprovalMode } from "../../../../../../contracts/permissions"
 import {
-  DEFAULT_EFFORT,
-  DEFAULT_MODEL,
   MODEL_OPTIONS,
   REASONING_EFFORTS,
-  STORAGE_KEYS,
-  type ReasoningEffort,
 } from "../../../../constants"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
+import {
+  useChatStore,
+  useProjectStore,
+  usePromptSettingsStore,
+  type FolderItem,
+} from "../../../../stores"
 import styles from "./PromptBar.module.scss"
 
-interface PromptBarProps {
-  promptText: string
-  onPromptChange: (value: string) => void
-  onSendPrompt: (model: string, effort: ReasoningEffort, 
-  approvalMode: ApprovalMode) => void
-  onWorkspacePathChange: (path: string | null) => void
-}
-
-interface FolderItem {
-  name: string
-  path: string
-}
-
 type ModelPopoverTab = "effort" | "models"
-
-const APPROVAL_MODE_STORAGE_KEY = "harness_approval_mode"
 
 function isApprovalMode(value: string | null): value is ApprovalMode {
   return value === "manual" || value === "auto-safe" || value === "full-access"
 }
 
-function loadApprovalMode(): ApprovalMode {
-  try {
-    const saved = localStorage.getItem(APPROVAL_MODE_STORAGE_KEY)
-    return isApprovalMode(saved) ? saved : "manual"
-  } catch {
-    return "manual"
-  }
-}
-
 const SLIDER_THUMB_SIZE_PX = 28
 const SLIDER_THUMB_RADIUS_PX = SLIDER_THUMB_SIZE_PX / 2
-const MAX_RECENT_FOLDERS = 5
 
-function loadSavedRecentFolders(): FolderItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.RECENT_FOLDERS)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (item): item is FolderItem =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as FolderItem).name === "string" &&
-        typeof (item as FolderItem).path === "string" &&
-        (item as FolderItem).path !== "Local",
-    )
-  } catch {
-    return []
-  }
-}
+export function PromptBar() {
+  const [promptText, setPromptText] = useState("")
+  const selectedModel = usePromptSettingsStore((state) => state.selectedModel)
+  const selectedEffort = usePromptSettingsStore((state) => state.selectedEffort)
+  const approvalMode = usePromptSettingsStore((state) => state.approvalMode)
+  const selectedFolder = usePromptSettingsStore((state) => state.selectedFolder)
+  const recentFolders = usePromptSettingsStore((state) => state.recentFolders)
+  const setSelectedModel = usePromptSettingsStore((state) => state.setSelectedModel)
+  const setSelectedEffort = usePromptSettingsStore((state) => state.setSelectedEffort)
+  const setApprovalMode = usePromptSettingsStore((state) => state.setApprovalMode)
+  const selectFolder = usePromptSettingsStore((state) => state.selectFolder)
+  const clearSelectedFolder = usePromptSettingsStore((state) => state.clearSelectedFolder)
 
-export function PromptBar({
-  promptText,
-  onPromptChange,
-  onSendPrompt,
-  onWorkspacePathChange,
-}: PromptBarProps) {
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL)
-  const [selectedEffort, setSelectedEffort] = useState<ReasoningEffort>(DEFAULT_EFFORT)
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>(loadApprovalMode)
+  const activeSessionId = useProjectStore((state) => state.activeSessionId)
+  const sendPrompt = useChatStore((state) => state.sendPrompt)
+
   const [isModelPopoverOpen, setIsModelPopoverOpen] = useState(false)
   const [activePopoverTab, setActivePopoverTab] = useState<ModelPopoverTab>("effort")
   const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false)
-
-  const [selectedFolder, setSelectedFolder] = useState<FolderItem | null>(null)
-  const [recentFolders, setRecentFolders] = useState<FolderItem[]>(loadSavedRecentFolders)
   const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false)
 
   const attachMenuRef = useRef<HTMLDivElement>(null)
@@ -92,14 +54,22 @@ export function PromptBar({
   const selectedEffortIndex = REASONING_EFFORTS.indexOf(selectedEffort)
   const sliderProgressRatio = selectedEffortIndex / (REASONING_EFFORTS.length - 1)
 
+  const submitPrompt = () => {
+    const prompt = promptText.trim()
+    if (!prompt || !activeSessionId) return
+    sendPrompt({
+      sessionId: String(activeSessionId),
+      prompt,
+      model: selectedModel,
+      workspacePath: selectedFolder?.path,
+      approvalMode,
+    })
+    setPromptText("")
+  }
+
   const handleApprovalModeChange = (value: string) => {
     if (!isApprovalMode(value)) return
     setApprovalMode(value)
-    try {
-      localStorage.setItem(APPROVAL_MODE_STORAGE_KEY, value)
-    } catch {
-      // Keep the current mode for this app session when browser storage is unavailable.
-    }
   }
 
   const selectEffortByPointerX = (clientX: number, trackElement: HTMLDivElement) => {
@@ -128,28 +98,13 @@ export function PromptBar({
   const handleTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      onSendPrompt(selectedModel, selectedEffort, approvalMode)
+      submitPrompt()
     }
   }
 
   const handleAttachMock = (attachmentType: "file" | "folder") => {
     alert(`Attached: ${attachmentType === "file" ? "service.go" : "internal/refund/"}`)
     setIsAttachMenuOpen(false)
-  }
-
-  const savePickedFolder = (folder: FolderItem) => {
-    setRecentFolders((prev) => {
-      const filtered = prev.filter((item) => item.path !== folder.path)
-      const updated = [folder, ...filtered].slice(0, MAX_RECENT_FOLDERS)
-      try {
-        localStorage.setItem(STORAGE_KEYS.RECENT_FOLDERS, JSON.stringify(updated))
-      } catch {
-        // Ignore storage error
-      }
-      return updated
-    })
-    setSelectedFolder(folder)
-    onWorkspacePathChange(folder.path)
   }
 
   const handleOpenFolderDialog = async () => {
@@ -182,7 +137,7 @@ export function PromptBar({
     }
 
     if (pickedFolder) {
-      savePickedFolder(pickedFolder)
+      selectFolder(pickedFolder)
     }
   }
 
@@ -196,7 +151,7 @@ export function PromptBar({
             placeholder="Reply or assign next task. Type @ to attach files"
             rows={2}
             value={promptText}
-            onChange={(event) => onPromptChange(event.target.value)}
+            onChange={(event) => setPromptText(event.target.value)}
             onKeyDown={handleTextareaKeyDown}
           />
 
@@ -286,7 +241,7 @@ export function PromptBar({
               <button
                 type="button"
                 className={styles.sendButton}
-                onClick={() => onSendPrompt(selectedModel, selectedEffort, approvalMode)}
+                onClick={submitPrompt}
                 aria-label="Send prompt"
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -424,8 +379,7 @@ export function PromptBar({
                   type="button"
                   className={styles.folderMenuItem}
                   onClick={() => {
-                    setSelectedFolder(null)
-                    onWorkspacePathChange(null)
+                    clearSelectedFolder()
                     setIsFolderMenuOpen(false)
                   }}
                 >
@@ -464,8 +418,7 @@ export function PromptBar({
                         className={styles.folderMenuItem}
                         title={folderItem.path}
                         onClick={() => {
-                          setSelectedFolder(folderItem)
-                          onWorkspacePathChange(folderItem.path)
+                          selectFolder(folderItem)
                           setIsFolderMenuOpen(false)
                         }}
                       >

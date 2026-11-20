@@ -1,15 +1,11 @@
 import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
 import { APP_CONFIG } from "../../constants"
-import type { Theme } from "../../theme/ThemeContext"
+import { useAuthStore } from "../../stores"
 import styles from "./NoProjectPage.module.scss"
 
-interface NoProjectPageProps {
-  username: string
-  onSignOut: () => void
-  onThemeChangeToast: (theme: Theme) => void
-}
+export function NoProjectPage() {
+  const openSignOutConfirm = useAuthStore((state) => state.openSignOutConfirm)
 
-export function NoProjectPage({ username, onSignOut, onThemeChangeToast }: NoProjectPageProps) {
   const sidebarContent = (
     <div className={styles.sidebarSection}>
       <div className={styles.brand}>
@@ -24,12 +20,7 @@ export function NoProjectPage({ username, onSignOut, onThemeChangeToast }: NoPro
   )
 
   return (
-    <MainLayout
-      username={username}
-      onSignOut={onSignOut}
-      onThemeChangeToast={onThemeChangeToast}
-      sidebarContent={sidebarContent}
-    >
+    <MainLayout sidebarContent={sidebarContent}>
       <div className={styles.main} aria-labelledby="noProjectTitle">
         <div className={styles.emptyAccessCard}>
           <div className={styles.emptyAccessIcon}>
@@ -88,7 +79,7 @@ export function NoProjectPage({ username, onSignOut, onThemeChangeToast }: NoPro
             >
               Contact AMS support
             </a>
-            <button className={styles.signoutLink} type="button" onClick={onSignOut}>
+            <button className={styles.signoutLink} type="button" onClick={openSignOutConfirm}>
               Sign out
             </button>
           </div>
