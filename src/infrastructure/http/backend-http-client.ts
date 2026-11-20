@@ -1,5 +1,7 @@
 import { Agent, fetch as undiciFetch, Headers as UndiciHeaders } from "undici"
 import type { HeadersInit, RequestInfo, RequestInit, Response } from "undici-types"
+import { API_RESPONSE_CODES, parseApiErrorEnvelope } from "../../contracts/api-response"
+import { logger } from "../logging/logger"
 import { getSystemCaCertificates } from "./system-ca"
 
 export interface AuthTokenProvider {
@@ -60,16 +62,26 @@ export class BackendHttpClient {
     })
   }
 
-  postSerialized(path: string, body: string, headers: HeadersInit = {}, signal?: AbortSignal): Promise<Response> {
+  async postSerialized(path: string, body: string, headers: HeadersInit = {}, signal?: AbortSignal): Promise<Response> {
     const requestHeaders = new UndiciHeaders(headers)
     requestHeaders.set("Content-Type", "application/json")
-    return this.fetchImpl(resolveBackendUrl(this.backendOrigin, path), {
-      method: "POST",
-      headers: requestHeaders,
-      body,
-      signal,
-      dispatcher: this.dispatcher,
-    })
+    const url = resolveBackendUrl(this.backendOrigin, path)
+    const startedAt = Date.now()
+    logger.apiRequest("POST", url)
+    try {
+      const response = await this.fetchImpl(url, {
+        method: "POST",
+        headers: requestHeaders,
+        body,
+        signal,
+        dispatcher: this.dispatcher,
+      })
+      logger.apiResponse("POST", url, response.status, Date.now() - startedAt)
+      return response
+    } catch (error) {
+      logger.apiError("POST", url, error, Date.now() - startedAt)
+      throw error
+    }
   }
 
   close(): Promise<void> {
@@ -78,12 +90,35 @@ export class BackendHttpClient {
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(resolveBackendUrl(this.backendOrigin, path), {
-      dispatcher: this.dispatcher,
-      ...init,
-    })
-    if (!response.ok) throw new Error(`Backend API returned ${response.status}: ${await response.text()}`)
-    return await response.json() as T
+    const url = resolveBackendUrl(this.backendOrigin, path)
+    const method = init.method ?? "GET"
+    const startedAt = Date.now()
+    logger.apiRequest(method, url)
+    try {
+      const response = await this.fetchImpl(url, {
+        dispatcher: this.dispatcher,
+        ...init,
+      })
+      logger.apiResponse(method, url, response.status, Date.now() - startedAt)
+      if (!response.ok) {
+        const rawText = await response.text()
+        let parsedBody: unknown = null
+        try {
+          parsedBody = JSON.parse(rawText)
+        } catch {
+          // Non-JSON response
+        }
+        const apiError = parseApiErrorEnvelope(parsedBody)
+        if (response.status >= 500 || apiError.code === API_RESPONSE_CODES.INTERNAL_ERROR) {
+          throw new Error(apiError.message || `Service temporarily unavailable (${response.status})`)
+        }
+        throw new Error(apiError.message || `Backend API returned ${response.status}: ${rawText}`)
+      }
+      return await response.json() as T
+    } catch (error) {
+      logger.apiError(method, url, error, Date.now() - startedAt)
+      throw error
+    }
   }
 
   private createAuthenticatedFetch(fetchImpl: BackendFetch): BackendFetch {

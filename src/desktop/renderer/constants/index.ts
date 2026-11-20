@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   THEME: "ccodex-theme",
   RECENT_FOLDERS: "ccodex-recent-folders",
+  ACCEPTED_TERMS_VERSION: "ccodex-accepted-terms-version",
 } as const
 
 export const APP_CONFIG = {

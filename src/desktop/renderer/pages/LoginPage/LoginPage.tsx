@@ -1,55 +1,124 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import cmcLogoLogin from "../../assets/cmc_global_login.jpg"
 import { APP_CONFIG } from "../../constants"
+import { classifyAuthError } from "../../utils/error-message"
 import { TermsModal } from "./components/TermsModal"
 import styles from "./LoginPage.module.scss"
 
+const MAX_USERNAME_LENGTH = 20
+const MAX_PASSWORD_LENGTH = 50
+
 interface LoginPageProps {
   onLoginSuccess: (username: string) => void
+  showTermsModal?: boolean
+  onAgreeTerms?: () => void
+  onDisagreeTerms?: () => void
+  externalError?: string | null
+  resetCounter?: number
 }
 
-export function LoginPage({ onLoginSuccess }: LoginPageProps) {
+export function LoginPage({
+  onLoginSuccess,
+  showTermsModal = false,
+  onAgreeTerms,
+  onDisagreeTerms,
+  externalError = null,
+  resetCounter = 0,
+}: LoginPageProps) {
+  const usernameInputRef = useRef<HTMLInputElement>(null)
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [usernameError, setUsernameError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [pendingUser, setPendingUser] = useState<{
-    username: string
-    password: string
-  } | null>(null)
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const trimmedUser = username.trim()
-    if (!trimmedUser || !password) return
-    setErrorMessage(null)
-    setPendingUser({ username: trimmedUser, password })
+  useEffect(() => {
+    usernameInputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (resetCounter === 0) return
+    setUsername("")
+    setPassword("")
+    setShowPassword(false)
+    setUsernameError(null)
+    setPasswordError(null)
+    usernameInputRef.current?.focus()
+  }, [resetCounter])
+
+  useEffect(() => {
+    if (externalError) {
+      setErrorMessage(externalError)
+    }
+  }, [externalError])
+
+  const trimmedUsername = username.trim()
+  const isSubmitDisabled = !trimmedUsername || !password || isSubmitting
+
+  const validateUsername = (value: string): string | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return "Username is required."
+    if (trimmed.length > MAX_USERNAME_LENGTH) {
+      return `Username must not exceed ${MAX_USERNAME_LENGTH} characters.`
+    }
+    return null
   }
 
-  const handleAgreeTerms = async () => {
-    if (!pendingUser || isSubmitting) return
-    const { username: confirmedUser, password: confirmedPassword } = pendingUser
-    setPendingUser(null)
+  const validatePassword = (value: string): string | null => {
+    if (!value) return "Password is required."
+    if (value.length > MAX_PASSWORD_LENGTH) {
+      return `Password must not exceed ${MAX_PASSWORD_LENGTH} characters.`
+    }
+    return null
+  }
+
+  const handleUsernameBlur = () => {
+    const trimmed = username.trim()
+    if (trimmed !== username) {
+      setUsername(trimmed)
+    }
+    setUsernameError(validateUsername(trimmed))
+  }
+
+  const handlePasswordBlur = () => {
+    setPasswordError(validatePassword(password))
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (isSubmitting) return
+
+    const trimmed = username.trim()
+    if (trimmed !== username) {
+      setUsername(trimmed)
+    }
+
+    const nextUsernameError = validateUsername(trimmed)
+    const nextPasswordError = validatePassword(password)
+    setUsernameError(nextUsernameError)
+    setPasswordError(nextPasswordError)
+
+    if (nextUsernameError || nextPasswordError) {
+      return
+    }
+
+    setErrorMessage(null)
     setIsSubmitting(true)
     try {
-      await window.desktop.login(confirmedUser, confirmedPassword)
+      await window.desktop.login(trimmed, password)
       setPassword("")
-      onLoginSuccess(confirmedUser)
+      onLoginSuccess(trimmed)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Sign in failed. Please try again.")
+      const { message, isGlobalToast } = classifyAuthError(error)
+      if (!isGlobalToast) {
+        setErrorMessage(message)
+      }
       setPassword("")
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  const handleDisagreeTerms = () => {
-    setPendingUser(null)
-    setPassword("")
-    setErrorMessage(
-      "You must agree to the Terms of Use and Privacy Policy to access C-CodeX Assistant.",
-    )
   }
 
   return (
@@ -61,7 +130,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <img src={cmcLogoLogin} alt="CMC Global" />
           </div>
           <div className={styles.brandTitle}>C-CodeX</div>
-          <div className={styles.brandSubtitle}>AI Coding Assistant · Desktop App</div>
+          <div className={styles.brandSubtitle}>Coding Agent</div>
 
           <div className={styles.featureList}>
             <div className={styles.featureCard}>
@@ -129,8 +198,6 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </div>
           </div>
         </div>
-
-        <div className={styles.poweredBy}>Powered by CMC Global · POA Identity</div>
       </div>
 
       {/* Right Form Column */}
@@ -141,20 +208,36 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
           {errorMessage && <div className={styles.loginError}>{errorMessage}</div>}
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} noValidate>
             <div className={styles.fieldGroup}>
               <label className={styles.label} htmlFor="loginUser">
                 Username
               </label>
               <input
+                ref={usernameInputRef}
                 id="loginUser"
-                className={styles.input}
+                className={`${styles.input} ${usernameError ? styles.inputError : ""}`}
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                maxLength={MAX_USERNAME_LENGTH}
+                autoFocus
+                onChange={(e) => {
+                  const sanitized = e.target.value.replace(/\s+/g, "")
+                  setUsername(sanitized)
+                  if (usernameError) setUsernameError(null)
+                  if (errorMessage) setErrorMessage(null)
+                }}
+                onBlur={handleUsernameBlur}
                 placeholder="e.g. username"
+                aria-invalid={Boolean(usernameError)}
+                aria-describedby={usernameError ? "loginUserError" : undefined}
                 required
               />
+              {usernameError && (
+                <div id="loginUserError" className={styles.fieldError} role="alert">
+                  {usernameError}
+                </div>
+              )}
             </div>
 
             <div className={styles.fieldGroup}>
@@ -164,11 +247,19 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <div className={styles.passwordInputWrap}>
                 <input
                   id="loginPass"
-                  className={`${styles.input} ${styles.passwordInput}`}
+                  className={`${styles.input} ${styles.passwordInput} ${passwordError ? styles.inputError : ""}`}
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  maxLength={MAX_PASSWORD_LENGTH}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    if (passwordError) setPasswordError(null)
+                    if (errorMessage) setErrorMessage(null)
+                  }}
+                  onBlur={handlePasswordBlur}
                   placeholder="••••••••"
+                  aria-invalid={Boolean(passwordError)}
+                  aria-describedby={passwordError ? "loginPassError" : undefined}
                   required
                 />
                 <button
@@ -179,23 +270,6 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   title={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M1 1l22 22"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                       <path
                         d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
@@ -212,9 +286,31 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                         strokeWidth="1.8"
                       />
                     </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M1 1l22 22"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   )}
                 </button>
               </div>
+              {passwordError && (
+                <div id="loginPassError" className={styles.fieldError} role="alert">
+                  {passwordError}
+                </div>
+              )}
             </div>
 
             <div className={styles.poaRow}>
@@ -224,7 +320,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               </span>
             </div>
 
-            <button type="submit" className={styles.submitBtn} disabled={isSubmitting}>
+            <button type="submit" className={styles.submitBtn} disabled={isSubmitDisabled}>
               {isSubmitting ? "Signing in…" : "Sign in with CMC Account"}
             </button>
           </form>
@@ -243,8 +339,8 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         </div>
       </div>
 
-      {pendingUser && (
-        <TermsModal onAgree={handleAgreeTerms} onDisagree={handleDisagreeTerms} />
+      {showTermsModal && onAgreeTerms && onDisagreeTerms && (
+        <TermsModal onAgree={onAgreeTerms} onDisagree={onDisagreeTerms} />
       )}
     </div>
   )
