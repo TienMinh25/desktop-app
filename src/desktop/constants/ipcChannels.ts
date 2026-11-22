@@ -28,4 +28,5 @@ export const IPC_CHANNELS = {
   SESSIONS_RENAME: "sessions:rename",
   SESSIONS_DELETE: "sessions:delete",
   SIDEBAR_SEARCH: "sidebar:search",
+  APP_LOG_EVENT: "app:log-event",
 } as const

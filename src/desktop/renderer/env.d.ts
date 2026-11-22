@@ -37,6 +37,15 @@ declare global {
     respondToPermission: (permissionRequestId: string, decision: "allow" | "deny") => void
     respondToQuestion: (questionRequestId: string, answer: string) => void
     subscribeHarnessEvents: (listener: (event: HarnessEvent) => void) => () => void
+    subscribeLogEvents?: (
+      listener: (entry: {
+        category: "api" | "ipc"
+        level: "info" | "error"
+        env: string
+        message: string
+        meta?: unknown
+      }) => void,
+    ) => () => void
     listProjects: () => Promise<ProjectsListResult>
     subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void) => () => void
     listSessions: (projectId: string) => Promise<SessionRow[]>

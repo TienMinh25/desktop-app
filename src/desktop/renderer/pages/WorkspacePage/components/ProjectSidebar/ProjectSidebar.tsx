@@ -1,24 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
 import type { SidebarSearchResult } from "../../../../../../contracts/projects"
-import { newestFirst, type ChatSession, type ProjectItem } from "../../../../hooks/useProjectSessions"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
+import {
+  newestFirst,
+  useChatStore,
+  useCustomizeStore,
+  useProjectStore,
+  type ChatSession,
+} from "../../../../stores"
 import styles from "./ProjectSidebar.module.scss"
-
-interface ProjectSidebarProps {
-  projects: ProjectItem[]
-  selectedProjectId: string | null
-  sessions: ChatSession[]
-  activeSessionId: string | null
-  expandedProjects: Record<string, boolean>
-  isCustomizeActive?: boolean
-  onSelectCustomize?: () => void
-  onSelectProject: (projectId: string) => void
-  onToggleExpandProject: (projectId: string) => void
-  onSelectSession: (sessionId: string) => void
-  onNewChat: () => void
-  onRenameSession: (sessionId: string, title: string) => void
-  onDeleteSession: (sessionId: string) => void
-}
 
 interface SessionMenuState {
   sessionId: string
@@ -26,21 +16,27 @@ interface SessionMenuState {
   left: number
 }
 
-export function ProjectSidebar({
-  projects,
-  selectedProjectId,
-  sessions,
-  activeSessionId,
-  expandedProjects,
-  isCustomizeActive = false,
-  onSelectCustomize,
-  onSelectProject,
-  onToggleExpandProject,
-  onSelectSession,
-  onNewChat,
-  onRenameSession,
-  onDeleteSession,
-}: ProjectSidebarProps) {
+export function ProjectSidebar() {
+  const projects = useProjectStore((state) => state.assignedProjects)
+  const selectedProjectId = useProjectStore((state) => state.selectedProjectId)
+  const sessions = useProjectStore((state) => state.sessions)
+  const activeSessionId = useProjectStore((state) => state.activeSessionId)
+  const expandedProjects = useProjectStore((state) => state.expandedProjects)
+  const selectProject = useProjectStore((state) => state.selectProject)
+  const toggleExpandProject = useProjectStore((state) => state.toggleExpandProject)
+  const selectSession = useProjectStore((state) => state.selectSession)
+  const createNewChat = useProjectStore((state) => state.createNewChat)
+  const renameSession = useProjectStore((state) => state.renameSession)
+  const deleteSession = useProjectStore((state) => state.deleteSession)
+
+  const isCustomizeActive = useCustomizeStore((state) => state.isOpen)
+  const openCustomize = useCustomizeStore((state) => state.openCustomize)
+  const closeCustomize = useCustomizeStore((state) => state.closeCustomize)
+
+  const clearSessionRuntime = useChatStore((state) => state.clearSessionRuntime)
+
+  const displaySelectedProjectId = isCustomizeActive ? null : selectedProjectId
+  const displayActiveSessionId = isCustomizeActive ? null : activeSessionId
   const [searchQuery, setSearchQuery] = useState("")
   const [openMenuSession, setOpenMenuSession] = useState<SessionMenuState | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
@@ -97,7 +93,7 @@ export function ProjectSidebar({
       <button
         type="button"
         className={`${styles.customizeNavBtn} ${isCustomizeActive ? styles.customizeActive : ""}`}
-        onClick={onSelectCustomize}
+        onClick={() => openCustomize("connectors")}
       >
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.35" />
@@ -116,7 +112,8 @@ export function ProjectSidebar({
           onClick={() => {
             // Clear search so the new chat is visible
             setSearchQuery("")
-            onNewChat()
+            closeCustomize()
+            void createNewChat(selectedProjectId)
           }}
           title="Start a new chat in the active project"
         >
@@ -165,7 +162,7 @@ export function ProjectSidebar({
           projects.map((project) => {
             // Show hits even in a collapsed project
             const isExpanded = searching || !!expandedProjects[project.id]
-            const isSelected = selectedProjectId === project.id
+            const isSelected = displaySelectedProjectId === project.id
             const projectSessions = sessions
               .filter((s) => s.projectId === project.id)
               .sort(newestFirst)
@@ -185,8 +182,9 @@ export function ProjectSidebar({
                     title={`Open ${project.name}`}
                     aria-expanded={isExpanded}
                     onClick={() => {
-                      onSelectProject(project.id)
-                      onToggleExpandProject(project.id)
+                      closeCustomize()
+                      selectProject(project.id)
+                      toggleExpandProject(project.id)
                     }}
                   >
                     {isExpanded ? (
@@ -237,7 +235,7 @@ export function ProjectSidebar({
                       <div className={styles.sidebarEmpty}>No chats in this project.</div>
                     ) : (
                       projectSessions.map((session) => {
-                        const isSessionActive = session.id === activeSessionId
+                        const isSessionActive = session.id === displayActiveSessionId
                         const isMenuOpen = openMenuSession?.sessionId === session.id
                         return (
                           <div
@@ -246,7 +244,10 @@ export function ProjectSidebar({
                               isSessionActive || isMenuOpen ? styles.active : ""
                             }`}
                             title={`${session.title} · ${project.name}`}
-                            onClick={() => onSelectSession(session.id)}
+                            onClick={() => {
+                              closeCustomize()
+                              selectSession(session.id)
+                            }}
                             onMouseEnter={handleSessionMouseEnter}
                             onMouseLeave={handleSessionMouseLeave}
                           >
@@ -269,7 +270,7 @@ export function ProjectSidebar({
                                   onBlur={(e) => {
                                     setEditingSessionId(null)
                                     const title = e.currentTarget.value.trim()
-                                    if (title && title !== session.title) onRenameSession(session.id, title)
+                                    if (title && title !== session.title) void renameSession(session.id, title)
                                   }}
                                 />
                               ) : (
@@ -358,7 +359,9 @@ export function ProjectSidebar({
             onClick={() => {
               const targetId = openMenuSession.sessionId
               setOpenMenuSession(null)
-              onDeleteSession(targetId)
+              void deleteSession(targetId).then((deleted) => {
+                if (deleted) clearSessionRuntime(targetId)
+              })
             }}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">

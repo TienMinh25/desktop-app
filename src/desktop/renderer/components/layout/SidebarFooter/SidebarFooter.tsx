@@ -1,25 +1,21 @@
-import { useTheme, type Theme } from "../../../theme/ThemeContext"
+import { toast, useAuthStore, useThemeStore, type Theme } from "../../../stores"
 import styles from "./SidebarFooter.module.scss"
 
 interface SidebarFooterProps {
-  username: string
   role?: string
-  onSignOut: () => void
-  onThemeChangeToast?: (theme: Theme) => void
 }
 
-export function SidebarFooter({
-  username,
-  role = "Project Member",
-  onSignOut,
-  onThemeChangeToast,
-}: SidebarFooterProps) {
-  const { theme, setTheme } = useTheme()
+export function SidebarFooter({ role = "Project Member" }: SidebarFooterProps) {
+  const username = useAuthStore((state) => state.authState?.username ?? "")
+  const openSignOutConfirm = useAuthStore((state) => state.openSignOutConfirm)
+  const theme = useThemeStore((state) => state.theme)
+  const setTheme = useThemeStore((state) => state.setTheme)
+
   const initials = (username || "CU").slice(0, 2).toUpperCase()
 
   const handleSetTheme = (nextTheme: Theme) => {
     setTheme(nextTheme)
-    onThemeChangeToast?.(nextTheme)
+    toast.info(`${nextTheme === "light" ? "Light" : "Dark"} mode enabled.`)
   }
 
   return (
@@ -74,7 +70,7 @@ export function SidebarFooter({
         <button
           className={styles.signoutButton}
           type="button"
-          onClick={onSignOut}
+          onClick={openSignOutConfirm}
           title="Sign out"
           aria-label="Sign out"
         >

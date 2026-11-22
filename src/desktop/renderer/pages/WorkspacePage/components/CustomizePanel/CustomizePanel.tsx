@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type UIEvent } from "react"
 import type { McpConnectorItem } from "../../../../../../contracts/mcp-registry"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
+import { toast, useCustomizeStore } from "../../../../stores"
 import { AddCustomConnectorModal } from "./connectors/AddCustomConnectorModal"
 import { ConnectorDetailView } from "./connectors/ConnectorDetailView"
 import { ConnectorsTabView } from "./connectors/ConnectorsTabView"
@@ -8,15 +9,11 @@ import styles from "./CustomizePanel.module.scss"
 import { SkillsTabView } from "./skills/SkillsTabView"
 import { LanguageServersTabView } from "./lsp/LanguageServersTabView"
 
-interface CustomizePanelProps {
-  onShowToast: (message: string) => void
-  initialTab?: "skills" | "connectors" | "lsp"
-}
-
 type MainTab = "skills" | "connectors" | "lsp"
 type ConnectorSubTab = "yours" | "discover"
 
-export function CustomizePanel({ onShowToast, initialTab = "connectors" }: CustomizePanelProps) {
+export function CustomizePanel() {
+  const initialTab = useCustomizeStore((state) => state.initialTab)
   const [mainTab, setMainTab] = useState<MainTab>(initialTab)
   const [subTab, setSubTab] = useState<ConnectorSubTab>("discover")
   const [searchQuery, setSearchQuery] = useState("")
@@ -95,11 +92,11 @@ export function CustomizePanel({ onShowToast, initialTab = "connectors" }: Custo
       setNextCursor(response.nextCursor)
     } catch (err) {
       loadingCursorRef.current = null
-      onShowToast(err instanceof Error ? err.message : "Could not load more connectors")
+      toast.error(err instanceof Error ? err.message : "Could not load more connectors")
     } finally {
       setIsLoadingMore(false)
     }
-  }, [nextCursor, isLoadingInitial, isLoadingMore, debouncedSearch, onShowToast])
+  }, [nextCursor, isLoadingInitial, isLoadingMore, debouncedSearch])
 
   useEffect(() => {
     if (mainTab !== "connectors" || subTab !== "discover" || selectedConnector) return
@@ -159,10 +156,10 @@ export function CustomizePanel({ onShowToast, initialTab = "connectors" }: Custo
     const exists = isConnectorAdded(connector.serverName)
     if (exists) {
       setYourItems((prev) => prev.filter((item) => item.serverName !== connector.serverName))
-      onShowToast(`Removed ${connector.title} from your connectors`)
+      toast.info(`Removed ${connector.title} from your connectors`)
     } else {
       setYourItems((prev) => [connector, ...prev])
-      onShowToast(`Connected ${connector.title}`)
+      toast.success(`Connected ${connector.title}`)
     }
   }
 
@@ -195,7 +192,7 @@ export function CustomizePanel({ onShowToast, initialTab = "connectors" }: Custo
     setIsCustomModalOpen(false)
     setMainTab("connectors")
     setSubTab("yours")
-    onShowToast(`Added custom connector "${trimmedName}"`)
+    toast.success(`Added custom connector "${trimmedName}"`)
   }
 
   const filteredYourItems = useMemo(() => {
@@ -367,7 +364,7 @@ export function CustomizePanel({ onShowToast, initialTab = "connectors" }: Custo
           {mainTab === "skills" ? (
             <SkillsTabView />
           ) : mainTab === "lsp" ? (
-            <LanguageServersTabView onShowToast={onShowToast} />
+            <LanguageServersTabView />
           ) : (
             <ConnectorsTabView
               subTab={subTab}

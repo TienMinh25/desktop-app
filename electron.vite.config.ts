@@ -11,6 +11,9 @@ export default defineConfig(({ command, mode }) => {
   const pick = (key: string): string => process.env[key]?.trim() || fileEnv[key]?.trim() || ""
 
   const rawEnv = {
+    APP_ENV: pick("APP_ENV") || (mode === "production" ? "prod" : mode === "uat" ? "uat" : "sit"),
+    ENABLE_API_LOG: pick("ENABLE_API_LOG"),
+    ENABLE_IPC_LOG: pick("ENABLE_IPC_LOG"),
     BACKEND_HOST: pick("BACKEND_HOST"),
     MCP_REGISTRY_BASE_URL: pick("MCP_REGISTRY_BASE_URL"),
     MCP_REGISTRY_API_VERSION: pick("MCP_REGISTRY_API_VERSION"),
@@ -27,6 +30,11 @@ export default defineConfig(({ command, mode }) => {
   }
 
   const buildEnv = rawEnv
+  const rendererEnv = {
+    APP_ENV: buildEnv.APP_ENV,
+    ENABLE_API_LOG: buildEnv.ENABLE_API_LOG,
+    ENABLE_IPC_LOG: buildEnv.ENABLE_IPC_LOG,
+  }
 
   return {
     main: {
@@ -57,6 +65,9 @@ export default defineConfig(({ command, mode }) => {
     },
     renderer: {
       root: resolve(root, "src/desktop/renderer"),
+      define: {
+        __APP_RENDERER_ENV__: JSON.stringify(rendererEnv),
+      },
       plugins: [react()],
       css: {
         preprocessorOptions: {

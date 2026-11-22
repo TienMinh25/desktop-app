@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import type { LspCustomServer, LspServerStatus, LspSettings } from "../../../../../../../contracts/lsp"
+import { toast, useCustomizeStore } from "../../../../../stores"
 import { AddCustomLspServerModal } from "./AddCustomLspServerModal"
 import styles from "./LanguageServersTabView.module.scss"
 
-interface LanguageServersTabViewProps {
-  onShowToast: (message: string) => void
-}
-
 const EMPTY_SETTINGS: LspSettings = { profiles: {}, customServers: [] }
 
-export function LanguageServersTabView({ onShowToast }: LanguageServersTabViewProps) {
+export function LanguageServersTabView() {
   const [servers, setServers] = useState<LspServerStatus[]>([])
   const [settings, setSettings] = useState<LspSettings>(EMPTY_SETTINGS)
   const [commandInputs, setCommandInputs] = useState<Record<string, string>>({})
@@ -52,7 +49,8 @@ export function LanguageServersTabView({ onShowToast }: LanguageServersTabViewPr
     try {
       const statuses = await window.desktop.saveLspSettings(next)
       applyStatuses(statuses)
-      if (successMessage) onShowToast(successMessage)
+      void useCustomizeStore.getState().refreshLspStatus()
+      if (successMessage) toast.success(successMessage)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save language-server settings")
       throw saveError
@@ -66,7 +64,8 @@ export function LanguageServersTabView({ onShowToast }: LanguageServersTabViewPr
     setIsSaving(true)
     try {
       applyStatuses(await window.desktop.rescanLspServers())
-      onShowToast("Language servers checked again")
+      void useCustomizeStore.getState().refreshLspStatus()
+      toast.info("Language servers checked again")
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : "Could not check language servers")
     } finally {

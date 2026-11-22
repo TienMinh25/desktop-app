@@ -21,12 +21,21 @@ import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
 import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
+import { registerIpcHandler, setLogForwarder } from "../../infrastructure/logging/logger"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
 
 getSystemDispatcher()
+
+setLogForwarder((entry) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+            win.webContents.send(IPC_CHANNELS.APP_LOG_EVENT, entry)
+        }
+    }
+})
 
 const { autoUpdater } = electronUpdater
 
@@ -392,26 +401,27 @@ ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (event) => {
         path: folderPath,
     }
 })
-ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, async (event) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.AUTH_GET_STATE, async (event) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
     return await getAuthService().getAuthState()
 })
-ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknown) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
     const parsed = AuthCredentialsSchema.safeParse(value)
     if (!parsed.success) throw new Error("Username and password are required")
     const state = await getAuthService().login(parsed.data.username, parsed.data.password)
     broadcastAuthState(state)
     return state
-})
-ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
+}, { logArgs: false })
+registerIpcHandler(ipcMain, IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
     return await getAuthService().logout()
 })
-ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.MCP_LIST_SERVERS, async (_event, params?: McpListServersParams) => {
     return await mcpRegistryClient.listServers(params ?? {})
 })
-ipcMain.handle(
+registerIpcHandler(
+    ipcMain,
     IPC_CHANNELS.MCP_GET_SERVER_VERSION,
     async (_event, payload: { serverName: string; version?: string }) => {
         return await mcpRegistryClient.getServerVersion(payload.serverName, payload.version ?? "latest")
