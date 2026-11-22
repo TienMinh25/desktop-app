@@ -412,7 +412,7 @@ registerIpcHandler(ipcMain, IPC_CHANNELS.AUTH_LOGIN, async (event, value: unknow
     const state = await getAuthService().login(parsed.data.username, parsed.data.password)
     broadcastAuthState(state)
     return state
-})
+}, { logArgs: false })
 registerIpcHandler(ipcMain, IPC_CHANNELS.AUTH_LOGOUT, async (event) => {
     if (!isTrustedAuthSender(event)) throw new Error("Untrusted authentication request")
     return await getAuthService().logout()

@@ -190,10 +190,11 @@ export function registerIpcHandler<TArgs extends unknown[], TResult>(
   ipcMainInstance: IpcMain,
   channel: string,
   handler: (event: IpcMainInvokeEvent, ...args: TArgs) => Promise<TResult> | TResult,
+  options: { logArgs?: boolean } = {},
 ): void {
   ipcMainInstance.handle(channel, async (event, ...args) => {
     const startedAt = Date.now()
-    logger.ipcCall(channel, args)
+    logger.ipcCall(channel, options.logArgs === false ? undefined : args)
     try {
       const result = await handler(event, ...(args as TArgs))
       logger.ipcSuccess(channel, Date.now() - startedAt)

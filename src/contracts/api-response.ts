@@ -22,7 +22,7 @@ export const ApiPaginationSchema = z.object({
 export const ApiMetadataSchema = z.object({
   code: z.string(),
   pagination: ApiPaginationSchema.optional(),
-}).passthrough()
+}).loose()
 
 export const ApiFieldErrorSchema = z.object({
   field: z.string(),
@@ -30,17 +30,17 @@ export const ApiFieldErrorSchema = z.object({
 })
 
 export const ApiErrorEnvelopeSchema = z.object({
-  metadata: z.object({ code: z.string() }).passthrough(),
+  metadata: z.object({ code: z.string() }).loose(),
   error: z.union([z.string(), z.array(ApiFieldErrorSchema)]),
-}).passthrough()
+}).loose()
 
-export function createApiSuccessEnvelopeSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+export function createApiSuccessEnvelopeSchema<T extends z.ZodType>(dataSchema: T) {
   return z.object({
     data: dataSchema,
     metadata: ApiMetadataSchema.extend({
       code: z.literal(API_RESPONSE_CODES.SUCCESS),
     }),
-  }).passthrough()
+  }).loose()
 }
 
 export type ApiPagination = z.infer<typeof ApiPaginationSchema>

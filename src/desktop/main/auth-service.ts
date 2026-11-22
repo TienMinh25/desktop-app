@@ -142,7 +142,8 @@ export class AuthService {
   private async requestTokenPair(path: string, body: unknown): Promise<AuthTokenPair> {
     const startedAt = Date.now()
     const url = `${this.requireApiBase()}${path}`
-    logger.apiRequest("POST", url, body)
+    // Authentication payloads contain passwords and refresh tokens; never include them in logs.
+    logger.apiRequest("POST", url)
 
     let response: Awaited<ReturnType<typeof undiciFetch>>
     try {
