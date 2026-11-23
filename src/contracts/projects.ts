@@ -1,12 +1,13 @@
 import { z } from "zod"
+import { API_RESPONSE_CODES, ApiMetadataSchema, ApiPaginationSchema } from "./api-response"
 
 // GET /api/v2/projects?source=desktop-app&page=&page_size=
+const DesktopProjectSchema = z.object({ id: z.number(), key: z.string(), name: z.string(), is_active: z.boolean() })
+
+// Pagination is required here, the shared metadata schema has it optional
 export const DesktopProjectsPageSchema = z.object({
-  data: z.array(z.object({ id: z.number(), key: z.string(), name: z.string() })),
-  metadata: z.object({
-    code: z.literal("0000"),
-    pagination: z.object({ has_next: z.boolean() }).loose(),
-  }).loose(),
+  data: z.array(DesktopProjectSchema),
+  metadata: ApiMetadataSchema.extend({ code: z.literal(API_RESPONSE_CODES.SUCCESS), pagination: ApiPaginationSchema }),
 }).loose()
 
 export type DesktopProjectsPage = z.input<typeof DesktopProjectsPageSchema>
