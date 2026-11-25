@@ -12,7 +12,12 @@ export { useThemeStore, type Theme } from "./app/theme.store"
 export { useToastStore, toast, type ToastItem, type ToastType } from "./app/toast.store"
 
 // Workspace feature stores
-export { useChatStore, type TurnState } from "./workspace/chat.store"
+export {
+  useChatStore,
+  INTERRUPTED_TURN_MESSAGE,
+  resolveHistoryTurns,
+  type TurnState,
+} from "./workspace/chat.store"
 export { useCustomizeStore, type CustomizeTab } from "./workspace/customize.store"
 export {
   useProjectStore,

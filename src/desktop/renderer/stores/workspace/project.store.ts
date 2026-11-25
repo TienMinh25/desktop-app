@@ -2,6 +2,7 @@ import type { ProjectsListResult, SessionRow } from "../../../../contracts/proje
 import { formatGeneralErrorMessage } from "../../utils/error-message"
 import { toast } from "../app/toast.store"
 import { createAppStore } from "../create-store"
+import { useChatStore } from "./chat.store"
 
 const PROJECT_ACTIONS = {
   LOADED: "projects/loaded",
@@ -9,6 +10,7 @@ const PROJECT_ACTIONS = {
   CREATE_CHAT: "projects/createChat",
   SELECT_PROJECT: "projects/selectProject",
   SELECT_SESSION: "projects/selectSession",
+  SET_SESSION_HISTORY: "projects/setSessionHasHistory",
   TOGGLE_EXPAND: "projects/toggleExpand",
   RENAME_SESSION: "projects/renameSession",
   DELETE_SESSION: "projects/deleteSession",
@@ -54,6 +56,7 @@ interface ProjectStoreState {
   selectProject: (projectId: string) => void
   toggleExpandProject: (projectId: string) => void
   selectSession: (sessionId: string) => void
+  setSessionHasHistory: (sessionId: string, hasHistory: boolean) => void
   createNewChat: (projectId?: string | null) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
   deleteSession: (sessionId: string) => Promise<boolean>
@@ -73,6 +76,15 @@ const INITIAL_PROJECT_STATE = {
 export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore", (set, get) => {
   const isAssigned = (projectId: string) =>
     get().assignedProjects.some((project) => project.id === projectId)
+
+  const syncSessionHistory = (sessionId: string | null) => {
+    if (!sessionId) return
+    void useChatStore.getState().loadHistory(sessionId).then((turns) => {
+      if (turns && turns.length > 0) {
+        get().setSessionHasHistory(sessionId, true)
+      }
+    })
+  }
 
   return {
     ...INITIAL_PROJECT_STATE,
@@ -97,6 +109,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
 
         const loaded = sessionLists.flat().map(toChatSession)
         const firstProjectId = active[0]?.id ?? null
+        const prevActiveSessionId = get().activeSessionId
 
         set(
           (state) => {
@@ -110,13 +123,19 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
                 ? state.activeSessionId
                 : (loaded.find((s) => s.projectId === firstProjectId)?.id ?? null)
 
+            // Preserve loaded history flags across periodic background project syncs
+            const previousHasHistory = new Map(state.sessions.map((s) => [s.id, s.hasHistory]))
+            const sessions = loaded.map((session) =>
+              previousHasHistory.get(session.id) ? { ...session, hasHistory: true } : session,
+            )
+
             return {
               loadError: error,
               assignedProjects: active.map(({ id, key, name }) => ({ id, key, name })),
               expandedProjects: Object.fromEntries(
                 active.map((project) => [project.id, state.expandedProjects[project.id] ?? true]),
               ),
-              sessions: loaded,
+              sessions,
               selectedProjectId: nextSelectedProjectId,
               activeSessionId: nextActiveSessionId,
               isLoaded: true,
@@ -125,6 +144,14 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
           false,
           PROJECT_ACTIONS.LOADED,
         )
+        const nextActiveSessionId = get().activeSessionId
+        if (
+          nextActiveSessionId &&
+          (nextActiveSessionId !== prevActiveSessionId ||
+            useChatStore.getState().history[nextActiveSessionId] === undefined)
+        ) {
+          syncSessionHistory(nextActiveSessionId)
+        }
       }
 
       const fail = (cause: unknown) => {
@@ -163,6 +190,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
           false,
           PROJECT_ACTIONS.CREATE_CHAT,
         )
+        syncSessionHistory(row.id)
       } catch (cause) {
         toast.error(`Could not create chat: ${formatGeneralErrorMessage(cause)}`)
       }
@@ -177,6 +205,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
 
       if (scoped.length > 0 && scoped[0]) {
         set({ activeSessionId: scoped[0].id }, false, PROJECT_ACTIONS.SELECT_SESSION)
+        syncSessionHistory(scoped[0].id)
       } else {
         void get().createNewChat(projectId)
       }
@@ -202,6 +231,19 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
         { selectedProjectId: target.projectId, activeSessionId: target.id },
         false,
         PROJECT_ACTIONS.SELECT_SESSION,
+      )
+      syncSessionHistory(target.id)
+    },
+
+    setSessionHasHistory: (sessionId, hasHistory) => {
+      set(
+        (state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId && s.hasHistory !== hasHistory ? { ...s, hasHistory } : s,
+          ),
+        }),
+        false,
+        PROJECT_ACTIONS.SET_SESSION_HISTORY,
       )
     },
 
@@ -253,6 +295,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
             false,
             PROJECT_ACTIONS.SELECT_SESSION,
           )
+          if (get().activeSessionId === remaining.id) syncSessionHistory(remaining.id)
         } else {
           void get().createNewChat(selectedProjectId)
         }

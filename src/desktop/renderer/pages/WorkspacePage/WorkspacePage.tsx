@@ -1,6 +1,12 @@
 import { useEffect } from "react"
 import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
-import { toast, useChatStore, useCustomizeStore, useProjectStore } from "../../stores"
+import {
+  resolveHistoryTurns,
+  toast,
+  useChatStore,
+  useCustomizeStore,
+  useProjectStore,
+} from "../../stores"
 import { ConversationStream } from "./components/ConversationStream/ConversationStream"
 import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
@@ -12,7 +18,9 @@ export function WorkspacePage() {
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId)
   const sessions = useProjectStore((state) => state.sessions)
   const activeSessionId = useProjectStore((state) => state.activeSessionId)
+  const setSessionHasHistory = useProjectStore((state) => state.setSessionHasHistory)
 
+  const history = useChatStore((state) => state.history)
   const turns = useChatStore((state) => state.turns)
   const queuedPrompts = useChatStore((state) => state.queuedPrompts)
   const subscribeHarness = useChatStore((state) => state.subscribeHarness)
@@ -40,6 +48,14 @@ export function WorkspacePage() {
 
   const turn = activeSessionId === null ? undefined : turns[String(activeSessionId)]
   const activeQueue = activeSessionId === null ? [] : queuedPrompts[String(activeSessionId)] ?? []
+  const sessionHistory = activeSessionId === null ? [] : history[String(activeSessionId)] ?? []
+  const visibleHistory = resolveHistoryTurns(sessionHistory, turn)
+
+  useEffect(() => {
+    if (activeSessionId && sessionHistory.length > 0 && activeSession && !activeSession.hasHistory) {
+      setSessionHasHistory(activeSessionId, true)
+    }
+  }, [activeSessionId, sessionHistory.length, activeSession, setSessionHasHistory])
 
   return (
     <MainLayout sidebarContent={<ProjectSidebar />}>
@@ -47,30 +63,23 @@ export function WorkspacePage() {
         <CustomizePanel />
       ) : (
         <>
-          {turn || activeQueue.length > 0 || activeSession?.hasHistory ? (
+          {turn || activeQueue.length > 0 || visibleHistory.length > 0 || activeSession?.hasHistory ? (
             <>
               <div className={styles.chatTopHeader}>
                 <span>{activeSession?.title ?? "New chat"}</span>
               </div>
-              {turn ? (
-                <ConversationStream
-                  userPrompt={turn.prompt}
-                  assistantText={turn.assistantText}
-                  isStreaming={turn.isStreaming}
-                  error={turn.error}
-                  permission={turn.permission}
-                  question={turn.question}
-                  todos={turn.todos}
-                  pendingPrompts={activeQueue}
-                  toolStatus={turn.toolStatus}
-                  onPermissionDecision={(id, decision) =>
-                    respondToPermission(turn.sessionId, turn.requestId, id, decision)
-                  }
-                  onQuestionAnswer={(id, answer) =>
-                    respondToQuestion(turn.sessionId, turn.requestId, id, answer)
-                  }
-                />
-              ) : null}
+              <ConversationStream
+                key={activeSessionId ?? undefined}
+                historyTurns={visibleHistory}
+                liveTurn={turn}
+                pendingPrompts={activeQueue}
+                onPermissionDecision={(id, decision) => {
+                  if (turn) respondToPermission(turn.sessionId, turn.requestId, id, decision)
+                }}
+                onQuestionAnswer={(id, answer) => {
+                  if (turn) respondToQuestion(turn.sessionId, turn.requestId, id, answer)
+                }}
+              />
             </>
           ) : (
             <div className={styles.centerGreeting}>
