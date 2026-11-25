@@ -2,7 +2,7 @@ import { basename } from "node:path"
 import { join } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { app, BrowserWindow, dialog, ipcMain, screen, shell, utilityProcess, type UtilityProcess } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell, utilityProcess, type UtilityProcess } from "electron"
 import electronUpdater from "electron-updater"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/message-types"
 import { PermissionResponseCommandSchema, QuestionResponseCommandSchema, type HarnessCommand } from "../../contracts/commands"
@@ -24,6 +24,7 @@ import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 import { registerIpcHandler, setLogForwarder } from "../../infrastructure/logging/logger"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
+import { listSessionHistory, MEDIA_PROTOCOL_SCHEME, openAllowedMediaPath, parseMediaProtocolUrl, readReferencedMediaBlob } from "./message-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
@@ -244,6 +245,14 @@ ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, t
 ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
     requireTrustedSender(event)
     deleteSession(getDb(), requireText(sessionId, "sessionId"), { harnessAlive: harness.alive })
+})
+ipcMain.handle(IPC_CHANNELS.SESSIONS_HISTORY, async (event, sessionId: unknown) => {
+    requireTrustedSender(event)
+    return listSessionHistory(getDb(), requireText(sessionId, "sessionId"))
+})
+ipcMain.handle(IPC_CHANNELS.MEDIA_OPEN_PATH, async (event, filePath: unknown) => {
+    requireTrustedSender(event)
+    return openAllowedMediaPath(getDb(), filePath, (targetPath) => shell.openPath(targetPath))
 })
 ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
     requireTrustedSender(event)
@@ -530,6 +539,19 @@ ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
     }
 })
 
+// Custom media protocol privileges must be registered before app readiness
+protocol.registerSchemesAsPrivileged([
+    {
+        scheme: MEDIA_PROTOCOL_SCHEME,
+        privileges: {
+            standard: true,
+            secure: true,
+            supportFetchAPI: true,
+            stream: true,
+        },
+    },
+])
+
 app.whenReady().then(async () => {
     if (!hasSingleInstanceLock || quitState !== "running") return
     await mkdir(ccodexDirectory, { recursive: true })
@@ -549,6 +571,22 @@ app.whenReady().then(async () => {
         app.quit()
         return
     }
+    protocol.handle(MEDIA_PROTOCOL_SCHEME, (request) => {
+        if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 })
+        if (!db) return new Response(null, { status: 503 })
+        const sha256 = parseMediaProtocolUrl(request.url)
+        if (!sha256) return new Response(null, { status: 404 })
+        const blob = readReferencedMediaBlob(db, sha256)
+        if (!blob) return new Response(null, { status: 404 })
+        return new Response(request.method === "HEAD" ? null : new Uint8Array(blob.data), {
+            status: 200,
+            headers: {
+                "Content-Type": blob.mime,
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'",
+            },
+        })
+    })
     scheduleProjectSync()
     setupAutoUpdater()
     await openMainWindow()

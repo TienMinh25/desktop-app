@@ -6,6 +6,7 @@ import type { AppUpdaterState } from "../../contracts/updater"
 import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
 import type { ProjectsListResult, SessionRow, SidebarSearchResult } from "../../contracts/projects"
+import type { OpenMediaPathResult, SessionHistoryTurn } from "../../contracts/session-history"
 
 declare global {
   interface SelectedFolderInfo {
@@ -52,6 +53,8 @@ declare global {
     createSession: (projectId: string, title: string) => Promise<SessionRow>
     renameSession: (sessionId: string, title: string) => Promise<void>
     deleteSession: (sessionId: string) => Promise<void>
+    listSessionHistory: (sessionId: string) => Promise<SessionHistoryTurn[]>
+    openMediaPath: (filePath: string) => Promise<OpenMediaPathResult>
     searchSidebar: (query: string) => Promise<SidebarSearchResult>
   }
 

@@ -7,6 +7,7 @@ import type { LspServerStatus, LspSettings } from "../../contracts/lsp"
 import type { AuthState } from "../../contracts/auth"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 import type { ProjectsListResult, SessionRow, SidebarSearchResult } from "../../contracts/projects"
+import type { OpenMediaPathResult, SessionHistoryTurn } from "../../contracts/session-history"
 
 async function invokeChannel<T>(channel: string, ...args: unknown[]): Promise<T> {
   try {
@@ -80,6 +81,10 @@ contextBridge.exposeInMainWorld("desktop", {
     invokeChannel(IPC_CHANNELS.SESSIONS_RENAME, sessionId, title),
   deleteSession: (sessionId: string): Promise<void> =>
     invokeChannel(IPC_CHANNELS.SESSIONS_DELETE, sessionId),
+  listSessionHistory: (sessionId: string): Promise<SessionHistoryTurn[]> =>
+    invokeChannel(IPC_CHANNELS.SESSIONS_HISTORY, sessionId),
+  openMediaPath: (filePath: string): Promise<OpenMediaPathResult> =>
+    invokeChannel(IPC_CHANNELS.MEDIA_OPEN_PATH, filePath),
   searchSidebar: (query: string): Promise<SidebarSearchResult> =>
     invokeChannel(IPC_CHANNELS.SIDEBAR_SEARCH, query),
   subscribeProjectsChanged: (listener: (result: ProjectsListResult) => void): (() => void) => {
