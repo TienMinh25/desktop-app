@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite"
+import { createHash } from "node:crypto"
 import { expect, test } from "bun:test"
 import { mkdtempSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -67,4 +68,12 @@ test("migrate refuses a database newer than the app", () => {
   const db = memoryDb()
   db.exec(`PRAGMA user_version = ${MIGRATIONS.length + 1}`)
   expect(() => migrate(db)).toThrow("newer app")
+})
+
+// Add the hash of each new migration here, editing or deleting a shipped one fails this test
+const SHIPPED_SHA256 = ["cb4274473d5a28335d5d63f7ff71d89e247de91b8920c9817ef61644eee42cfd"]
+
+test("shipped migrations are never edited or deleted", () => {
+  const hashes = MIGRATIONS.map((sql) => createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex"))
+  expect(hashes.slice(0, SHIPPED_SHA256.length)).toEqual(SHIPPED_SHA256)
 })

@@ -490,8 +490,8 @@ app.whenReady().then(async () => {
         envConfig.BACKEND_HOST,
     )
     projectsHttp = new BackendHttpClient(envConfig.BACKEND_HOST, authService)
-    db = openDb(ccodexDirectory)
     try {
+        db = openDb(ccodexDirectory)
         migrate(db, join(ccodexDirectory, "backups"))
     } catch (error) {
         dialog.showErrorBox("Cannot open local data", error instanceof Error ? error.message : String(error))
