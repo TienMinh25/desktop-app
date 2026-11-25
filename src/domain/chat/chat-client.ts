@@ -99,8 +99,7 @@ export class ChatClient implements ChatModel {
             const data = frameDataText.trim()
             if (!data) continue
             if (data === "[DONE]") {
-              completed = true
-              break
+              throw new Error("Responses stream ended before response.completed")
             }
 
             const event = parseResponsesEvent(data)

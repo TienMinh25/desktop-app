@@ -30,6 +30,7 @@ it("sends the configured model and streams Responses text and output items", asy
     return sseResponse(
       `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "hello" })}\n\n`,
       `data: ${JSON.stringify({ type: "response.completed", response: { output: [callItem] } })}\n\n`,
+      "data: [DONE]\n\n",
     )
   })
 
@@ -104,6 +105,27 @@ it("keeps the HTTP status when the error response body cannot be read", async ()
     await expect(async () => {
       for await (const _event of client.stream({ model: "model", input: [], stream: true })) {}
     }).toThrow(/^Responses endpoint returned 502$/)
+  } finally {
+    await client.close()
+  }
+})
+
+const deltaFrame = 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n'
+const prematureEnd = "Responses stream ended before response.completed"
+
+it.each([
+  ["[DONE]", "data: [DONE]\n\n", prematureEnd],
+  ["[DONE] before a later completion", 'data: [DONE]\n\ndata: {"type":"response.completed","response":{"output":[]}}\n\n', prematureEnd],
+  ["EOF after a delta", deltaFrame, prematureEnd],
+  ["response.failed", 'data: {"type":"response.failed","response":{"error":{"message":"quota exceeded"}}}\n\n', "quota exceeded"],
+  ["response.incomplete", 'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}\n\n', "Responses generation was incomplete: max_output_tokens"],
+  ["error", 'data: {"type":"error","error":{"message":"upstream reset"}}\n\n', "upstream reset"],
+])("rejects %s before response.completed", async (_name, frames, message) => {
+  const client = createChatClient(async () => sseResponse(frames))
+  try {
+    await expect(async () => {
+      for await (const _event of client.stream({ model: "model", input: [], stream: true })) {}
+    }).toThrow(message)
   } finally {
     await client.close()
   }
