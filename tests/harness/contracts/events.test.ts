@@ -9,6 +9,7 @@ it("exposes the event discriminants from the shared contract", () => {
     CHAT_FAILED: "chat.failed",
     CHAT_QUEUED: "chat.queued",
     CHAT_STARTED: "chat.started",
+    CONTEXT_WARNING: "context.warning",
     PERMISSION_REQUIRED: "permission.required",
     PERMISSION_EXPIRED: "permission.expired",
     QUESTION_REQUIRED: "question.required",

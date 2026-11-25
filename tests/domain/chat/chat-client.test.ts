@@ -1,9 +1,10 @@
-import { expect, it } from "bun:test"
+import { expect, it, spyOn } from "bun:test"
 import { Headers, Response } from "undici"
 import type { Response as UndiciResponse } from "undici-types"
 import type { BackendFetch } from "../../../src/infrastructure/http/backend-http-client"
 import { BackendHttpClient } from "../../../src/infrastructure/http/backend-http-client"
 import { ChatClient } from "../../../src/domain/chat/chat-client"
+import { logger } from "../../../src/infrastructure/logging/logger"
 
 function sseResponse(...events: string[]): UndiciResponse {
   return new Response(events.join(""), { status: 200, headers: { "content-type": "text/event-stream" } })
@@ -62,12 +63,15 @@ it("accepts a Responses SSE frame larger than 1 MB", async () => {
 })
 
 it("returns endpoint errors and rejects malformed Responses SSE frames", async () => {
+  const logError = spyOn(logger, "apiError")
   const failed = createChatClient(async () => new Response("backend unavailable", { status: 503 }), "model")
   try {
     await expect(async () => {
       for await (const _event of failed.stream({ model: "model", input: [], stream: true })) {}
-    }).toThrow("Responses endpoint returned 503: backend unavailable")
+    }).toThrow(/^Responses endpoint returned 503$/)
+    expect(logError).toHaveBeenCalledWith("POST", "api/v1/chat/responses", expect.stringContaining("backend unavailable"), expect.any(Number))
   } finally {
+    logError.mockRestore()
     await failed.close()
   }
 
@@ -87,5 +91,20 @@ it("returns endpoint errors and rejects malformed Responses SSE frames", async (
     }).toThrow("invalid output array")
   } finally {
     await malformedShape.close()
+  }
+})
+
+it("keeps the HTTP status when the error response body cannot be read", async () => {
+  async function* brokenBody() {
+    yield Buffer.from("private detail")
+    throw new Error("connection interrupted")
+  }
+  const client = createChatClient(async () => new Response(brokenBody(), { status: 502 }))
+  try {
+    await expect(async () => {
+      for await (const _event of client.stream({ model: "model", input: [], stream: true })) {}
+    }).toThrow(/^Responses endpoint returned 502$/)
+  } finally {
+    await client.close()
   }
 })

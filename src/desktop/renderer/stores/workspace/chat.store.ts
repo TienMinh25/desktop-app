@@ -220,6 +220,18 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set) =>
           event.type,
         )
         return
+      case HARNESS_EVENT_TYPES.CONTEXT_WARNING:
+        set(
+          (state) => ({
+            turns: updateMatchingTurn(state.turns, event.sessionId, event.requestId, (turn) => ({
+              ...turn,
+              error: turn.error ? `${turn.error}\n${event.message}` : event.message,
+            })),
+          }),
+          false,
+          event.type,
+        )
+        return
       case HARNESS_EVENT_TYPES.CHAT_COMPLETED:
         set(
           (state) => ({

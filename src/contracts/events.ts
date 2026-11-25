@@ -35,6 +35,11 @@ export interface ChatFailedEvent extends SessionEvent {
   message: string
 }
 
+export interface ContextWarningEvent extends SessionEvent {
+  type: typeof HARNESS_EVENT_TYPES.CONTEXT_WARNING
+  message: string
+}
+
 export interface PermissionRequiredEvent extends SessionEvent {
   type: typeof HARNESS_EVENT_TYPES.PERMISSION_REQUIRED
   permissionRequestId: string
@@ -87,4 +92,4 @@ export interface ToolFailedEvent extends SessionEvent {
   message: string
 }
 
-export type HarnessEvent = PongEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatQueuedEvent | ChatStartedEvent | ChatFailedEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent
+export type HarnessEvent = PongEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatQueuedEvent | ChatStartedEvent | ChatFailedEvent | ContextWarningEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent

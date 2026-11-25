@@ -10,6 +10,7 @@ import type {
 } from "./types"
 import type { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 import type { Response as HttpResponse } from "undici-types"
+import { logger } from "../../infrastructure/logging/logger"
 import { RESPONSES_LIMITS } from "./responses-limits"
 
 const CHAT_STREAM_PATH = "api/v1/chat/responses"
@@ -49,6 +50,7 @@ export class ChatClient implements ChatModel {
         throw new Error("Responses request exceeds the 400 MB serialized payload limit")
       }
 
+      const startedAt = Date.now()
       const response = await this.http.postSerialized(
         CHAT_STREAM_PATH,
         serializedBody,
@@ -57,8 +59,9 @@ export class ChatClient implements ChatModel {
       )
 
       if (!response.ok) {
-        const bodyPreview = await readResponsePreview(response, 8000)
-        throw new Error(`Responses endpoint returned ${response.status}: ${bodyPreview}`)
+        const bodyPreview = await readResponsePreview(response, 8000).catch(() => "(response body unavailable)")
+        logger.apiError("POST", CHAT_STREAM_PATH, `Responses endpoint returned ${response.status}: ${bodyPreview}`, Date.now() - startedAt)
+        throw new Error(`Responses endpoint returned ${response.status}`)
       }
       if (!response.body) throw new Error("Responses endpoint returned an empty response body")
 

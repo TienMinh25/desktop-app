@@ -13,6 +13,8 @@ export interface ToolContext {
   askUser(input: Omit<UserQuestion, "requestId" | "sessionId">): Promise<string>
   todoScope: { type: "request" | "goal"; id: string }
   updateTodos(items: TodoInput[]): TodoItem[]
+  // Absent keeps today's behaviour until the runtime passes the model's media capability
+  mediaInput?: boolean
 }
 
 export interface ToolPreparation {
