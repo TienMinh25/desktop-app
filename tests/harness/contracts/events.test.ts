@@ -4,6 +4,8 @@ import { HARNESS_EVENT_TYPES } from "../../../src/contracts/message-types"
 it("exposes the event discriminants from the shared contract", () => {
   expect(HARNESS_EVENT_TYPES).toEqual({
     PONG: "app.pong",
+    HARNESS_READY: "harness.ready",
+    HARNESS_EXITED: "harness.exited",
     ASSISTANT_DELTA: "assistant.delta",
     CHAT_COMPLETED: "chat.completed",
     CHAT_FAILED: "chat.failed",

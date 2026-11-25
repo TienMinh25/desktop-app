@@ -24,6 +24,7 @@ export interface BeginTurnInput {
 }
 
 export interface BeginTurnResult {
+  created: boolean
   turn: TurnHandle
   history: HistoryTurn[]
 }

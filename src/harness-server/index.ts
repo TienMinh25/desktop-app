@@ -1,9 +1,11 @@
+import Database from "better-sqlite3"
 import { type HarnessCommand } from "../contracts/commands"
 import type { HarnessEvent } from "../contracts/events"
 import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../contracts/message-types"
 import { isHarnessCommand } from "../contracts/guards"
 import { ChatClient } from "../domain/chat/chat-client"
 import { validate } from "../infrastructure/config/environment"
+import { configureConnection, type Db } from "../infrastructure/db/sqlite"
 import { BackendHttpClient } from "../infrastructure/http/backend-http-client"
 import { AuthTokenProvider } from "./auth-token-provider"
 import { HarnessRuntime } from "../harness/runtime"
@@ -11,7 +13,9 @@ import { PermissionManager } from "../harness/permissions/permission-manager"
 import { QuestionManager } from "../harness/interaction/question-manager"
 import { parsePermissionRules } from "../harness/permissions/permission-config"
 import { ToolRegistry } from "../harness/agent/tool-registry"
-import { InMemoryConversationStore } from "../harness/session/in-memory-conversation-store"
+import { InMemoryTurnStore } from "../harness/session/in-memory-turn-store"
+import { SqliteTurnStore } from "../harness/session/sqlite-turn-store"
+import type { TurnStore } from "../harness/session/turn-store"
 import { LocalExecutionEnvironment } from "../harness/execution/local-execution-environment"
 import { LspManager } from "../harness/lsp/lsp-manager"
 import { McpToolHost } from "../harness/mcp/mcp-tool-host"
@@ -34,6 +38,20 @@ const envConfig = validate(process.env)
 const authTokenProvider = new AuthTokenProvider(parentPort)
 
 const permissionConfig = parsePermissionRules(process.env.HARNESS_PERMISSION_RULES)
+const dbPath = process.env.CCODEX_DB_PATH?.trim()
+let db: Db | null = null
+let dbError: string | null = null
+let turns: TurnStore
+if (!dbPath) {
+  dbError = "CCODEX_DB_PATH is not configured."
+  turns = new InMemoryTurnStore()
+} else {
+  db = new Database(dbPath)
+  configureConnection(db, { synchronous: "FULL" })
+  const sqliteTurns = new SqliteTurnStore(db)
+  sqliteTurns.recoverInterrupted()
+  turns = sqliteTurns
+}
 
 const tools = new ToolRegistry()
 const lspManager = new LspManager()
@@ -43,10 +61,14 @@ const questions = new QuestionManager((event) => parentPort.postMessage(event))
 const mcpHost = new McpToolHost(process.env.MCP_SERVERS)
 let mcpRegistered = false
 
+const configurationError = [permissionConfig.error, dbError].filter(Boolean).join("\n") || null
+
 const runtime = new HarnessRuntime({
-  conversations: new InMemoryConversationStore(),
+  turns,
   tools,
   permissions,
+  // shortcut: provider of the model is unknown until the app reads the model catalog (M-9), turn on per provider then
+  supportsMediaInput: () => false,
   askUser(question) { return questions.ask(question) },
   cancelQuestionsForSession(sessionId) { questions.cancelSession(sessionId) },
   // Creates the authenticated backend stream adapter for the selected model.
@@ -61,7 +83,7 @@ const runtime = new HarnessRuntime({
     mcpRegistered = true
   },
   emit(event: HarnessEvent) { parentPort.postMessage(event) },
-  configurationError: permissionConfig.error,
+  configurationError,
 })
 
 parentPort.on("message", (messageEvent) => {
@@ -91,8 +113,27 @@ parentPort.on("message", (messageEvent) => {
   }
 })
 
+parentPort.postMessage({ type: HARNESS_EVENT_TYPES.HARNESS_READY } satisfies HarnessEvent)
+
 function assertNever(value: never): never {
   throw new Error(`Unhandled harness command: ${JSON.stringify(value)}`)
 }
 
-process.once("exit", () => { questions.close(); mcpHost.close(); lspManager.close(); authTokenProvider.close() })
+let closed = false
+function cleanup() {
+  if (closed) return
+  closed = true
+  try {
+    questions.close()
+    mcpHost.close()
+    lspManager.close()
+    authTokenProvider.close()
+  } finally {
+    db?.close()
+    db = null
+  }
+}
+
+process.once("exit", cleanup)
+process.once("SIGTERM", () => { cleanup(); process.exit(0) })
+process.once("SIGINT", () => { cleanup(); process.exit(0) })

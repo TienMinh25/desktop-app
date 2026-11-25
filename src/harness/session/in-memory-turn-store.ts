@@ -47,6 +47,7 @@ export class InMemoryTurnStore implements TurnStore {
     const existingIndex = turns.findIndex((turn) => turn.handle.clientRequestId === input.clientRequestId)
     if (existingIndex >= 0) {
       return {
+        created: false,
         turn: { ...turns[existingIndex]!.handle },
         history: turns.slice(0, existingIndex).map(toHistoryTurn),
       }
@@ -70,7 +71,7 @@ export class InMemoryTurnStore implements TurnStore {
     }
     turns.push({ handle, userParts, assistantParts: encodeParts([]), errorMessage: null, artifacts: [] })
     this.turnsBySession.set(input.sessionId, turns)
-    return { turn: { ...handle }, history }
+    return { created: true, turn: { ...handle }, history }
   }
 
   appendSteps(turn: TurnHandle, items: readonly StoredMessagePart[], blobs: readonly MediaBlob[] = []): void {

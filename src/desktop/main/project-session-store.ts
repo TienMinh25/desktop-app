@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { ProjectRow, SessionRow, SidebarSearchResult } from "../../contracts/projects"
-import type { Db } from "../../infrastructure/db/sqlite"
+import { pruneOrphanBlobs, type Db } from "../../infrastructure/db/sqlite"
 
 // Backend list is the source of truth for assignment and order, missing projects get is_assigned = 0
 // Call only with a successful response, an empty list unassigns every project
@@ -51,9 +51,24 @@ export function renameSession(db: Db, id: string, title: string): void {
   db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(title, id)
 }
 
-// Hard delete, ON DELETE CASCADE also removes the chat's messages, config and links
-export function deleteSession(db: Db, id: string): void {
-  db.prepare("DELETE FROM sessions WHERE id = ?").run(id)
+export class SessionRunningError extends Error {
+  constructor(readonly sessionId: string) {
+    super("Cannot delete a session while a turn is running.")
+    this.name = "SessionRunningError"
+  }
+}
+
+export function deleteSession(db: Db, id: string, options: { harnessAlive: boolean }): void {
+  db.transaction(() => {
+    if (options.harnessAlive) {
+      const running = db.prepare(`
+        SELECT 1 FROM messages
+        WHERE session_id = ? AND role = 'assistant' AND state = 'running'`).get(id)
+      if (running) throw new SessionRunningError(id)
+    }
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(id)
+    pruneOrphanBlobs(db)
+  }).immediate()
 }
 
 // shortcut: SQLite lower() folds ASCII only, "Đ" will not match "đ", add a folded column if users need it

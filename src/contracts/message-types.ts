@@ -9,6 +9,8 @@ export const HARNESS_COMMAND_TYPES = {
 
 export const HARNESS_EVENT_TYPES = {
   PONG: "app.pong",
+  HARNESS_READY: "harness.ready",
+  HARNESS_EXITED: "harness.exited",
   ASSISTANT_DELTA: "assistant.delta",
   CHAT_COMPLETED: "chat.completed",
   CHAT_FAILED: "chat.failed",

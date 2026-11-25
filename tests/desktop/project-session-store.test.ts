@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite"
+import { createHash } from "node:crypto"
 import { expect, test } from "bun:test"
-import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "../../src/desktop/main/project-session-store"
+import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, SessionRunningError, syncProjects } from "../../src/desktop/main/project-session-store"
 import { configureConnection, migrate, type Db } from "../../src/infrastructure/db/sqlite"
 
 function memoryDb(): Db {
@@ -56,9 +57,54 @@ test("deleteSession removes the row and its messages", () => {
   const created = createSession(db, "101", "/home", "New chat #1", 1000)
   db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at) VALUES (?, 1, 'user', ?, 1)")
     .run(created.id, JSON.stringify({ v: 1, parts: [{ type: "text", text: "hi" }] }))
-  deleteSession(db, created.id)
+  deleteSession(db, created.id, { harnessAlive: true })
   expect(listSessions(db, "101")).toEqual([])
   expect(db.prepare("SELECT count(*) AS n FROM messages").get()).toEqual({ n: 0 })
+})
+
+test("deleteSession refuses a running session when the harness is alive and allows it when dead", () => {
+  const db = memoryDb()
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
+  const created = createSession(db, "101", "/home", "Running chat", 1000)
+  db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at, state, client_request_id) VALUES (?, 1, 'assistant', ?, 1, 'running', 'req-1')")
+    .run(created.id, JSON.stringify({ v: 1, parts: [] }))
+
+  expect(() => deleteSession(db, created.id, { harnessAlive: true })).toThrow(SessionRunningError)
+  expect(listSessions(db, "101")).toHaveLength(1)
+
+  deleteSession(db, created.id, { harnessAlive: false })
+  expect(listSessions(db, "101")).toEqual([])
+  expect(db.prepare("SELECT count(*) AS n FROM messages").get()).toEqual({ n: 0 })
+})
+
+test("deleteSession prunes orphan media blobs while keeping blobs referenced by other sessions", () => {
+  const db = memoryDb()
+  syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
+  const s1 = createSession(db, "101", "/home", "Chat 1", 1000)
+  const s2 = createSession(db, "101", "/home", "Chat 2", 1001)
+
+  const sharedData = Buffer.from("shared-image")
+  const uniqueData = Buffer.from("unique-image")
+  const sharedSha = createHash("sha256").update(sharedData).digest("hex")
+  const uniqueSha = createHash("sha256").update(uniqueData).digest("hex")
+
+  db.prepare("INSERT INTO media_blob (sha256, mime, bytes, data, created_at) VALUES (?, 'image/png', ?, ?, 1)").run(sharedSha, sharedData.byteLength, sharedData)
+  db.prepare("INSERT INTO media_blob (sha256, mime, bytes, data, created_at) VALUES (?, 'image/png', ?, ?, 1)").run(uniqueSha, uniqueData.byteLength, uniqueData)
+
+  const m1 = db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at, state) VALUES (?, 1, 'assistant', '{\"v\":1,\"parts\":[]}', 1, 'completed')").run(s1.id)
+  const m2 = db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at, state) VALUES (?, 1, 'assistant', '{\"v\":1,\"parts\":[]}', 1, 'completed')").run(s2.id)
+
+  const insertArtifact = db.prepare("INSERT INTO artifacts (message_id, direction, path, name, mime_type, size_bytes, created_at, sha256) VALUES (?, 'out', ?, ?, 'image/png', ?, 1, ?)")
+  insertArtifact.run(m1.lastInsertRowid, `media:${sharedSha}`, "shared.png", sharedData.byteLength, sharedSha)
+  insertArtifact.run(m1.lastInsertRowid, `media:${uniqueSha}`, "unique.png", uniqueData.byteLength, uniqueSha)
+  insertArtifact.run(m2.lastInsertRowid, `media:${sharedSha}`, "shared.png", sharedData.byteLength, sharedSha)
+
+  deleteSession(db, s1.id, { harnessAlive: true })
+  const remainingAfterFirst = db.prepare("SELECT sha256 FROM media_blob").all() as Array<{ sha256: string }>
+  expect(remainingAfterFirst).toEqual([{ sha256: sharedSha }])
+
+  deleteSession(db, s2.id, { harnessAlive: true })
+  expect(db.prepare("SELECT count(*) AS n FROM media_blob").get()).toEqual({ n: 0 })
 })
 
 test("searchSidebar matches project names and chat titles of assigned projects, ignoring case", () => {

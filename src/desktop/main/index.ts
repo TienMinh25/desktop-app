@@ -4,8 +4,8 @@ import { mkdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { app, BrowserWindow, dialog, ipcMain, screen, shell, utilityProcess, type UtilityProcess } from "electron"
 import electronUpdater from "electron-updater"
-import { HARNESS_COMMAND_TYPES } from "../../contracts/message-types"
-import { PermissionResponseCommandSchema, QuestionResponseCommandSchema } from "../../contracts/commands"
+import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/message-types"
+import { PermissionResponseCommandSchema, QuestionResponseCommandSchema, type HarnessCommand } from "../../contracts/commands"
 import type { HarnessEvent } from "../../contracts/events"
 import { isHarnessCommand } from "../../contracts/guards"
 import type { McpListServersParams } from "../../contracts/mcp-registry"
@@ -16,6 +16,7 @@ import { McpRegistryClient } from "../../domain/mcp-registry/mcp-registry-client
 import { validate } from "../../infrastructure/config/environment"
 import { LSP_SERVER_CATALOG } from "../../domain/lsp/lsp-registry"
 import { LspSettingsStore } from "./lsp-settings-store"
+import { HarnessLifecycle } from "./harness-lifecycle"
 import { IPC_CHANNELS } from "../constants/ipcChannels"
 import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
@@ -39,7 +40,44 @@ setLogForwarder((entry) => {
 
 const { autoUpdater } = electronUpdater
 
-let harnessProcess: UtilityProcess | null = null
+const HARNESS_READY_TIMEOUT_MS = 15_000
+const HARNESS_STOP_TIMEOUT_MS = 5_000
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+    app.quit()
+} else {
+    app.on("second-instance", () => {
+        if (quitState !== "running") return
+        const existingWindow = BrowserWindow.getAllWindows()[0]
+        if (!existingWindow) {
+            if (db) void openMainWindow()
+            return
+        }
+        if (existingWindow.isMinimized()) existingWindow.restore()
+        existingWindow.focus()
+    })
+}
+
+const ccodexDirectory = join(app.getPath("home"), ".ccodex")
+let quitState: "running" | "stopping" | "finished" = "running"
+const harness = new HarnessLifecycle({
+    fork: forkHarnessProcess,
+    configure: configureHarness,
+    onMessage(child, message) {
+        const request = AuthRpcRequestSchema.safeParse(message)
+        if (request.success) {
+            void handleHarnessAuthRequest(child, request.data)
+            return
+        }
+        broadcastHarnessEvent(message as HarnessEvent)
+    },
+    onUnexpectedExit() {
+        broadcastHarnessEvent({ type: HARNESS_EVENT_TYPES.HARNESS_EXITED })
+    },
+    readyTimeoutMs: HARNESS_READY_TIMEOUT_MS,
+    stopTimeoutMs: HARNESS_STOP_TIMEOUT_MS,
+})
 let lspSettingsStore: LspSettingsStore | null = null
 let authService: AuthService | null = null
 const envConfig = validate(process.env)
@@ -76,10 +114,7 @@ function broadcastAuthState(state: AuthState) {
     }
 }
 
-async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown) {
-    const parsed = AuthRpcRequestSchema.safeParse(value)
-    if (!parsed.success) return false
-    const request: AuthRpcRequest = parsed.data
+async function handleHarnessAuthRequest(child: UtilityProcess, request: AuthRpcRequest) {
     try {
         let response: AuthRpcResponse
         switch (request.type) {
@@ -104,21 +139,22 @@ async function handleHarnessAuthRequest(process: UtilityProcess, value: unknown)
             default:
                 return assertNever(request)
         }
-        process.postMessage(response)
+        if (harness.readyProcess === child) child.postMessage(response)
     } catch (error) {
         if (error instanceof AuthServiceError && error.code === "unauthenticated") {
             broadcastAuthState({ authenticated: false, username: null })
         }
-        process.postMessage({
-            type: "auth.rpc.error",
-            requestId: request.requestId,
-            code: error instanceof AuthServiceError && error.code === "unauthenticated"
-                ? "unauthenticated"
-                : "request-failed",
-            message: error instanceof Error ? error.message : "Authentication request failed",
-        } satisfies AuthRpcResponse)
+        if (harness.readyProcess === child) {
+            child.postMessage({
+                type: "auth.rpc.error",
+                requestId: request.requestId,
+                code: error instanceof AuthServiceError && error.code === "unauthenticated"
+                    ? "unauthenticated"
+                    : "request-failed",
+                message: error instanceof Error ? error.message : "Authentication request failed",
+            } satisfies AuthRpcResponse)
+        }
     }
-    return true
 }
 
 let db: Db | null = null
@@ -161,7 +197,7 @@ function syncProjectsInBackground(): Promise<void> {
 
 function scheduleProjectSync() {
     // No new round after quit closed the DB
-    if (!db) return
+    if (!db || quitState !== "running") return
     projectSyncTimer = setTimeout(() => {
         void syncProjectsInBackground().finally(scheduleProjectSync)
     }, PROJECT_SYNC_INTERVAL_MS + Math.random() * PROJECT_SYNC_JITTER_MS)
@@ -207,7 +243,7 @@ ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, t
 })
 ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
     requireTrustedSender(event)
-    deleteSession(getDb(), requireText(sessionId, "sessionId"))
+    deleteSession(getDb(), requireText(sessionId, "sessionId"), { harnessAlive: harness.alive })
 })
 ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
     requireTrustedSender(event)
@@ -268,61 +304,58 @@ function setupAutoUpdater() {
     })
 }
 
-function startHarnessProcess(): UtilityProcess {
+function broadcastHarnessEvent(event: HarnessEvent) {
+    for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event)
+        }
+    }
+}
+
+function forkHarnessProcess(): UtilityProcess {
+    if (quitState !== "running") throw new Error("The app is shutting down.")
     const entryPath = fileURLToPath(new URL("./harness-server.js", import.meta.url))
-    const process = utilityProcess.fork(entryPath, [], {
+    return utilityProcess.fork(entryPath, [], {
         serviceName: "Ccodex Harness",
+        env: { ...process.env, CCODEX_DB_PATH: join(ccodexDirectory, "ccodex.db") },
     })
-    harnessProcess = process
-    process.on("message", (event: unknown) => {
-        if (AuthRpcRequestSchema.safeParse(event).success) {
-            void handleHarnessAuthRequest(process, event)
-            return
-        }
-        for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send(IPC_CHANNELS.HARNESS_EVENT, event as HarnessEvent)
-        }
-    })
-    process.on("exit", () => {
-        if (harnessProcess === process) harnessProcess = null
-    })
-    return process
 }
 
-function stopHarnessProcess() {
-    const process = harnessProcess
-    harnessProcess = null
-    process?.kill()
-}
-
-function isCurrentHarnessProcess(candidate: UtilityProcess) {
-    return harnessProcess === candidate
-}
-
-async function ensureHarnessProcess() {
-    if (harnessProcess) return
-    const process = startHarnessProcess()
-
-    let initialLspServers: LspServerConfig[] = []
+async function configureHarness(child: UtilityProcess) {
+    let servers: LspServerConfig[] = []
     try {
-        initialLspServers = await getLspSettingsStore().harnessConfigs()
+        servers = await getLspSettingsStore().harnessConfigs()
     } catch (error) {
         console.error("Could not load saved LSP settings; starting without language servers.", error)
     }
-    if (isCurrentHarnessProcess(process)) {
-        process.postMessage({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers: initialLspServers })
-    }
+    child.postMessage({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers })
 }
 
-function forwardHarnessCommand(command: unknown) {
-    if (!harnessProcess) return
-    harnessProcess.postMessage(command)
+function forwardHarnessCommand(command: HarnessCommand): boolean {
+    const child = harness.readyProcess
+    if (!child || quitState !== "running") return false
+    child.postMessage(command)
+    return true
 }
 
 ipcMain.on(IPC_CHANNELS.HARNESS_COMMAND, (event, command: unknown) => {
     if (!BrowserWindow.fromWebContents(event.sender) || !isHarnessCommand(command) || command.type === HARNESS_COMMAND_TYPES.PERMISSION_RESPOND || command.type === HARNESS_COMMAND_TYPES.QUESTION_RESPOND || command.type === HARNESS_COMMAND_TYPES.LSP_CONFIGURE) return
-    if (!harnessProcess) throw new Error("Harness process is not running")
-    forwardHarnessCommand(command)
+    if (forwardHarnessCommand(command) || command.type !== HARNESS_COMMAND_TYPES.CHAT_SUBMIT || quitState !== "running") return
+    void harness.ensure().then((child) => {
+        if (quitState !== "running") return
+        if (harness.readyProcess !== child) throw new Error("Harness exited before accepting the prompt.")
+        child.postMessage(command)
+    }).catch((error: unknown) => {
+        if (quitState !== "running") return
+        console.error("Could not send prompt to the harness:", error)
+        broadcastHarnessEvent({
+            type: HARNESS_EVENT_TYPES.CHAT_FAILED,
+            requestId: command.requestId,
+            sessionId: command.sessionId,
+            prompt: command.prompt,
+            message: "The assistant harness is unavailable. Try again.",
+        })
+    })
 })
 ipcMain.on(IPC_CHANNELS.PERMISSION_RESPONSE, (event, response: unknown) => {
     if (!BrowserWindow.fromWebContents(event.sender)) return
@@ -339,6 +372,23 @@ ipcMain.on(IPC_CHANNELS.QUESTION_RESPONSE, (event, response: unknown) => {
     forwardHarnessCommand(parsed.data)
 })
 
+
+// The window opens even when the harness fails, a prompt then retries the start and reports the error
+async function openMainWindow() {
+    try {
+        await harness.ensure()
+    } catch (error) {
+        console.error("Could not start the harness:", error)
+    }
+    if (quitState !== "running") return
+    const existingWindow = BrowserWindow.getAllWindows()[0]
+    if (existingWindow) {
+        if (existingWindow.isMinimized()) existingWindow.restore()
+        existingWindow.focus()
+        return
+    }
+    createWindow()
+}
 
 function createWindow() {
     const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
@@ -481,8 +531,9 @@ ipcMain.on(IPC_CHANNELS.UPDATER_INSTALL, () => {
 })
 
 app.whenReady().then(async () => {
-    const ccodexDirectory = join(app.getPath("home"), ".ccodex")
+    if (!hasSingleInstanceLock || quitState !== "running") return
     await mkdir(ccodexDirectory, { recursive: true })
+    if (quitState !== "running") return
     lspSettingsStore = new LspSettingsStore(ccodexDirectory, process.env, process.platform, app.getPath("home"))
     authService = new AuthService(
         new AuthSessionStore(ccodexDirectory),
@@ -500,24 +551,31 @@ app.whenReady().then(async () => {
     }
     scheduleProjectSync()
     setupAutoUpdater()
-    await ensureHarnessProcess()
-    createWindow()
+    await openMainWindow()
     app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            void ensureHarnessProcess().then(createWindow)
-        }
+        if (quitState === "running" && BrowserWindow.getAllWindows().length === 0) void openMainWindow()
     })
 })
 app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
-        stopHarnessProcess()
         app.quit()
     }
 })
-app.on("before-quit", () => {
-    stopHarnessProcess()
-    if (projectSyncTimer) clearTimeout(projectSyncTimer)
-    closeDb()
+app.on("before-quit", (event) => {
+    if (!hasSingleInstanceLock || quitState === "finished") return
+    event.preventDefault()
+    // A second quit while the harness is stopping must not start another stop
+    if (quitState === "stopping") return
+    quitState = "stopping"
+    if (projectSyncTimer) {
+        clearTimeout(projectSyncTimer)
+        projectSyncTimer = null
+    }
+    void harness.stop().finally(() => {
+        closeDb()
+        quitState = "finished"
+        app.quit()
+    })
 })
 
 function assertNever(value: never): never {

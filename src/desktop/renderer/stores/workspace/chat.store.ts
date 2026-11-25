@@ -59,8 +59,30 @@ interface ChatStoreState {
 
 export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set) => {
   const handleEvent = (event: HarnessEvent) => {
-    if (event.type === HARNESS_EVENT_TYPES.PONG) return
+    if (event.type === HARNESS_EVENT_TYPES.PONG || event.type === HARNESS_EVENT_TYPES.HARNESS_READY) return
     switch (event.type) {
+      case HARNESS_EVENT_TYPES.HARNESS_EXITED:
+        set(
+          (state) => {
+            const turns: Record<string, TurnState> = {}
+            for (const [sessionId, turn] of Object.entries(state.turns)) {
+              turns[sessionId] = turn.isStreaming
+                ? {
+                    ...turn,
+                    isStreaming: false,
+                    error: "The harness stopped. Prompts that were waiting were lost.",
+                    permission: null,
+                    question: null,
+                    toolStatus: null,
+                  }
+                : turn
+            }
+            return { turns, queuedPrompts: {} }
+          },
+          false,
+          event.type,
+        )
+        return
       case HARNESS_EVENT_TYPES.CHAT_QUEUED:
         set(
           (state) => {
@@ -246,19 +268,32 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set) =>
         return
       case HARNESS_EVENT_TYPES.CHAT_FAILED:
         set(
-          (state) => ({
-            queuedPrompts: {
+          (state) => {
+            const queued = state.queuedPrompts[event.sessionId] ?? []
+            const existing = state.turns[event.sessionId]
+            const queuedPrompts = {
               ...state.queuedPrompts,
-              [event.sessionId]: (state.queuedPrompts[event.sessionId] ?? []).filter(
-                (item) => item.requestId !== event.requestId,
-              ),
-            },
-            turns: updateMatchingTurn(state.turns, event.sessionId, event.requestId, (turn) => ({
-              ...turn,
-              isStreaming: false,
-              error: event.message,
-            })),
-          }),
+              [event.sessionId]: queued.filter((item) => item.requestId !== event.requestId),
+            }
+            if (existing?.isStreaming && existing.requestId !== event.requestId) return { queuedPrompts }
+            const turn = existing?.requestId === event.requestId ? existing : {
+              requestId: event.requestId,
+              sessionId: event.sessionId,
+              prompt: event.prompt,
+              assistantText: "",
+              permission: null,
+              question: null,
+              todos: [],
+              toolStatus: null,
+            }
+            return {
+              queuedPrompts,
+              turns: {
+                ...state.turns,
+                [event.sessionId]: { ...turn, isStreaming: false, error: event.message },
+              },
+            }
+          },
           false,
           event.type,
         )

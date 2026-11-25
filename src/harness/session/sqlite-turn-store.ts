@@ -1,5 +1,5 @@
 import { decodeParts, encodeParts, type StoredMessagePart } from "../../contracts/message-parts"
-import type { Db } from "../../infrastructure/db/sqlite"
+import { pruneOrphanBlobs, type Db } from "../../infrastructure/db/sqlite"
 import type { MediaBlob } from "../context/media"
 import type { HistoryTurn, TurnState } from "../context/types"
 import {
@@ -68,6 +68,7 @@ export class SqliteTurnStore implements TurnStore {
           WHERE session_id = ? AND seq < ?
           ORDER BY seq ASC`).all(input.sessionId, userSeq) as MessageRow[]
         return {
+          created: false,
           turn: {
             sessionId: input.sessionId,
             userMessageId: userRow.id,
@@ -127,6 +128,7 @@ export class SqliteTurnStore implements TurnStore {
       )
 
       return {
+        created: true,
         turn: {
           sessionId: input.sessionId,
           userMessageId: Number(userInsert.lastInsertRowid),
@@ -181,12 +183,7 @@ export class SqliteTurnStore implements TurnStore {
   }
 
   pruneOrphanBlobs(): number {
-    const result = this.db.prepare(`
-      DELETE FROM media_blob
-      WHERE NOT EXISTS (
-        SELECT 1 FROM artifacts WHERE artifacts.sha256 = media_blob.sha256
-      )`).run()
-    return result.changes
+    return pruneOrphanBlobs(this.db)
   }
 
   loadBlob(sha256: string): Buffer | null {

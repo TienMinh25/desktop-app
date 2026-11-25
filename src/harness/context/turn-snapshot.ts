@@ -47,8 +47,13 @@ export async function loadTurnSnapshot(input: LoadTurnSnapshotInput): Promise<Lo
   const contentGroups: StoredContentPart[][] = []
   let skippedStandaloneMedia = false
   for (const turn of history) {
+    // A failed write or crash can leave durable calls without a Responses tool output.
+    const completedCalls = turn.state === "interrupted" || turn.state === "failed"
+      ? new Set(turn.items.flatMap((item) => item.type === "function_call_output" ? [item.call_id] : []))
+      : undefined
     const items: ResponseInputItem[] = []
     for (const item of turn.items) {
+      if (item.type === "function_call" && completedCalls && !completedCalls.has(item.call_id)) continue
       if (item.type === "ccodex_media_ref") {
         skippedStandaloneMedia = true
         continue
