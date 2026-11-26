@@ -76,7 +76,10 @@ export class BackendHttpClient {
         signal,
         dispatcher: this.dispatcher,
       })
-      logger.apiResponse("POST", url, response.status, Date.now() - startedAt)
+      logger.apiResponse("POST", url, response.status, Date.now() - startedAt, {
+        status: response.status,
+        streaming: true,
+      })
       return response
     } catch (error) {
       logger.apiError("POST", url, error, Date.now() - startedAt)
@@ -99,7 +102,6 @@ export class BackendHttpClient {
         dispatcher: this.dispatcher,
         ...init,
       })
-      logger.apiResponse(method, url, response.status, Date.now() - startedAt)
       if (!response.ok) {
         const rawText = await response.text()
         let parsedBody: unknown = null
@@ -108,13 +110,16 @@ export class BackendHttpClient {
         } catch {
           // Non-JSON response
         }
+        logger.apiResponse(method, url, response.status, Date.now() - startedAt, parsedBody ?? rawText)
         const apiError = parseApiErrorEnvelope(parsedBody)
         if (response.status >= 500 || apiError.code === API_RESPONSE_CODES.INTERNAL_ERROR) {
           throw new Error(apiError.message || `Service temporarily unavailable (${response.status})`)
         }
         throw new Error(apiError.message || `Backend API returned ${response.status}: ${rawText}`)
       }
-      return await response.json() as T
+      const data = await response.json() as T
+      logger.apiResponse(method, url, response.status, Date.now() - startedAt, data)
+      return data
     } catch (error) {
       logger.apiError(method, url, error, Date.now() - startedAt)
       throw error

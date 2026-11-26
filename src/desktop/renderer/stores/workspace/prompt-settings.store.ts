@@ -3,6 +3,7 @@ import {
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   STORAGE_KEYS,
+  WORKSPACE_CONFIG,
   type ReasoningEffort,
 } from "../../constants"
 import { createPersistedAppStore } from "../create-store"
@@ -11,6 +12,7 @@ const PROMPT_SETTINGS_ACTIONS = {
   SET_MODEL: "promptSettings/setModel",
   SET_EFFORT: "promptSettings/setEffort",
   SET_APPROVAL_MODE: "promptSettings/setApprovalMode",
+  SET_SKIP_FULL_ACCESS_WARNING: "promptSettings/setSkipFullAccessWarning",
   SELECT_FOLDER: "promptSettings/selectFolder",
   CLEAR_FOLDER: "promptSettings/clearFolder",
 } as const
@@ -20,20 +22,22 @@ export interface FolderItem {
   path: string
 }
 
-const MAX_RECENT_FOLDERS = 5
-
 interface PromptSettingsState {
   selectedModel: string
   selectedEffort: ReasoningEffort
   approvalMode: ApprovalMode
+  skipFullAccessWarning: boolean
   selectedFolder: FolderItem | null
   recentFolders: FolderItem[]
 
-  setSelectedModel: (model: string) => void
-  setSelectedEffort: (effort: ReasoningEffort) => void
-  setApprovalMode: (mode: ApprovalMode) => void
-  selectFolder: (folder: FolderItem) => void
-  clearSelectedFolder: () => void
+  actions: {
+    setSelectedModel: (model: string) => void
+    setSelectedEffort: (effort: ReasoningEffort) => void
+    setApprovalMode: (mode: ApprovalMode) => void
+    setSkipFullAccessWarning: (skip: boolean) => void
+    selectFolder: (folder: FolderItem) => void
+    clearSelectedFolder: () => void
+  }
 }
 
 function loadLegacyRecentFolders(): FolderItem[] {
@@ -57,7 +61,7 @@ function loadLegacyRecentFolders(): FolderItem[] {
 
 type PersistedPromptSettings = Pick<
   PromptSettingsState,
-  "selectedModel" | "selectedEffort" | "approvalMode" | "recentFolders"
+  "selectedModel" | "selectedEffort" | "approvalMode" | "skipFullAccessWarning" | "selectedFolder" | "recentFolders"
 >
 
 export const usePromptSettingsStore = createPersistedAppStore<
@@ -69,31 +73,36 @@ export const usePromptSettingsStore = createPersistedAppStore<
     selectedModel: DEFAULT_MODEL,
     selectedEffort: DEFAULT_EFFORT,
     approvalMode: "manual",
+    skipFullAccessWarning: false,
     selectedFolder: null,
     recentFolders: loadLegacyRecentFolders(),
 
-    setSelectedModel: (selectedModel) =>
-      set({ selectedModel }, false, PROMPT_SETTINGS_ACTIONS.SET_MODEL),
-    setSelectedEffort: (selectedEffort) =>
-      set({ selectedEffort }, false, PROMPT_SETTINGS_ACTIONS.SET_EFFORT),
-    setApprovalMode: (approvalMode) =>
-      set({ approvalMode }, false, PROMPT_SETTINGS_ACTIONS.SET_APPROVAL_MODE),
+    actions: {
+      setSelectedModel: (selectedModel) =>
+        set({ selectedModel }, false, PROMPT_SETTINGS_ACTIONS.SET_MODEL),
+      setSelectedEffort: (selectedEffort) =>
+        set({ selectedEffort }, false, PROMPT_SETTINGS_ACTIONS.SET_EFFORT),
+      setApprovalMode: (approvalMode) =>
+        set({ approvalMode }, false, PROMPT_SETTINGS_ACTIONS.SET_APPROVAL_MODE),
+      setSkipFullAccessWarning: (skipFullAccessWarning) =>
+        set({ skipFullAccessWarning }, false, PROMPT_SETTINGS_ACTIONS.SET_SKIP_FULL_ACCESS_WARNING),
 
-    selectFolder: (folder) =>
-      set(
-        (state) => {
-          const filtered = state.recentFolders.filter((item) => item.path !== folder.path)
-          return {
-            selectedFolder: folder,
-            recentFolders: [folder, ...filtered].slice(0, MAX_RECENT_FOLDERS),
-          }
-        },
-        false,
-        PROMPT_SETTINGS_ACTIONS.SELECT_FOLDER,
-      ),
+      selectFolder: (folder) =>
+        set(
+          (state) => {
+            const filtered = state.recentFolders.filter((item) => item.path !== folder.path)
+            return {
+              selectedFolder: folder,
+              recentFolders: [folder, ...filtered].slice(0, WORKSPACE_CONFIG.MAX_RECENT_FOLDERS),
+            }
+          },
+          false,
+          PROMPT_SETTINGS_ACTIONS.SELECT_FOLDER,
+        ),
 
-    clearSelectedFolder: () =>
-      set({ selectedFolder: null }, false, PROMPT_SETTINGS_ACTIONS.CLEAR_FOLDER),
+      clearSelectedFolder: () =>
+        set({ selectedFolder: null }, false, PROMPT_SETTINGS_ACTIONS.CLEAR_FOLDER),
+    },
   }),
   {
     name: "ccodex-prompt-settings",
@@ -101,6 +110,8 @@ export const usePromptSettingsStore = createPersistedAppStore<
       selectedModel: state.selectedModel,
       selectedEffort: state.selectedEffort,
       approvalMode: state.approvalMode,
+      skipFullAccessWarning: state.skipFullAccessWarning,
+      selectedFolder: state.selectedFolder,
       recentFolders: state.recentFolders,
     }),
   },

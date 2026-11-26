@@ -15,14 +15,11 @@ export function WorkspacePage() {
 
   const turns = useChatStore((state) => state.turns)
   const queuedPrompts = useChatStore((state) => state.queuedPrompts)
-  const subscribeHarness = useChatStore((state) => state.subscribeHarness)
-  const respondToPermission = useChatStore((state) => state.respondToPermission)
-  const respondToQuestion = useChatStore((state) => state.respondToQuestion)
+  const { subscribeHarness, respondToPermission, respondToQuestion } = useChatStore((state) => state.actions)
 
   const isCustomizeOpen = useCustomizeStore((state) => state.isOpen)
   const hasEnabledLspServer = useCustomizeStore((state) => state.hasEnabledLspServer)
-  const openCustomize = useCustomizeStore((state) => state.openCustomize)
-  const refreshLspStatus = useCustomizeStore((state) => state.refreshLspStatus)
+  const { openCustomize, refreshLspStatus } = useCustomizeStore((state) => state.actions)
 
   const activeSession = sessions.find(
     (s) => s.id === activeSessionId && s.projectId === selectedProjectId,
@@ -61,7 +58,6 @@ export function WorkspacePage() {
                   permission={turn.permission}
                   question={turn.question}
                   todos={turn.todos}
-                  pendingPrompts={activeQueue}
                   toolStatus={turn.toolStatus}
                   onPermissionDecision={(id, decision) =>
                     respondToPermission(turn.sessionId, turn.requestId, id, decision)

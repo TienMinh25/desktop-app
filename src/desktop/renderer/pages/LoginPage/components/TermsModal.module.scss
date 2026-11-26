@@ -161,6 +161,11 @@
 .underlineLink {
   color: $accent-light;
   text-decoration: underline;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.85;
+  }
 }
 
 .actions {

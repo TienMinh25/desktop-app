@@ -169,7 +169,16 @@ export function TermsModal({ onAgree, onDisagree }: TermsModalProps) {
               onChange={(e) => setAgreedTerms(e.target.checked)}
             />
             <span>
-              I have read and agree to the <span className={styles.underlineLink}>Terms of Use</span>{" "}
+              I have read and agree to the{" "}
+              <a
+                className={styles.underlineLink}
+                href={APP_CONFIG.TERMS_OF_USE_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Terms of Use
+              </a>{" "}
               *
             </span>
           </label>
@@ -183,7 +192,16 @@ export function TermsModal({ onAgree, onDisagree }: TermsModalProps) {
             />
             <span>
               I have read and agree to the{" "}
-              <span className={styles.underlineLink}>Privacy Policy</span> *
+              <a
+                className={styles.underlineLink}
+                href={APP_CONFIG.PRIVACY_POLICY_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Privacy Policy
+              </a>{" "}
+              *
             </span>
           </label>
         </div>

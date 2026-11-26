@@ -81,6 +81,19 @@ function emitLog(
   logForwarder?.({ category, level, env, message, meta })
 }
 
+const MAX_LOG_META_CHARS = 8_000
+
+function sanitizeLogMeta(meta: unknown): unknown {
+  if (meta === undefined || meta === "") return undefined
+  try {
+    const serialized = typeof meta === "string" ? meta : JSON.stringify(meta)
+    if (serialized.length <= MAX_LOG_META_CHARS) return meta
+    return `${serialized.slice(0, MAX_LOG_META_CHARS)}… [truncated ${serialized.length - MAX_LOG_META_CHARS} chars]`
+  } catch {
+    return "[unserializable response]"
+  }
+}
+
 export const logger = {
   get config(): LoggingConfig {
     return resolveLoggingConfig()
@@ -98,7 +111,7 @@ export const logger = {
     )
   },
 
-  apiResponse(method: string, url: string, status: number, durationMs: number): void {
+  apiResponse(method: string, url: string, status: number, durationMs: number, responseBody?: unknown): void {
     const cfg = resolveLoggingConfig()
     if (!cfg.apiEnabled) return
     emitLog(
@@ -106,6 +119,7 @@ export const logger = {
       status >= 400 ? "error" : "info",
       cfg.env,
       `[${formatTimestamp()}] [${cfg.env.toUpperCase()}] [API <-] ${method.toUpperCase()} ${url} (${status}, ${durationMs}ms)`,
+      sanitizeLogMeta(responseBody),
     )
   },
 
@@ -134,7 +148,7 @@ export const logger = {
     )
   },
 
-  ipcSuccess(channel: string, durationMs: number): void {
+  ipcSuccess(channel: string, durationMs: number, response?: unknown): void {
     const cfg = resolveLoggingConfig()
     if (!cfg.ipcEnabled) return
     emitLog(
@@ -142,6 +156,7 @@ export const logger = {
       "info",
       cfg.env,
       `[${formatTimestamp()}] [${cfg.env.toUpperCase()}] [IPC <-] ${channel} (ok, ${durationMs}ms)`,
+      sanitizeLogMeta(response),
     )
   },
 
@@ -175,7 +190,7 @@ export async function withApiLogging<T>(
       result && typeof result === "object" && "status" in result && typeof result.status === "number"
         ? result.status
         : 200
-    logger.apiResponse(method, url, status, Date.now() - startedAt)
+    logger.apiResponse(method, url, status, Date.now() - startedAt, result)
     return result
   } catch (error) {
     logger.apiError(method, url, error, Date.now() - startedAt)
@@ -197,7 +212,7 @@ export function registerIpcHandler<TArgs extends unknown[], TResult>(
     logger.ipcCall(channel, options.logArgs === false ? undefined : args)
     try {
       const result = await handler(event, ...(args as TArgs))
-      logger.ipcSuccess(channel, Date.now() - startedAt)
+      logger.ipcSuccess(channel, Date.now() - startedAt, result)
       return result
     } catch (error) {
       logger.ipcError(channel, error, Date.now() - startedAt)

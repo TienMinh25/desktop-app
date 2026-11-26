@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
 import type { SidebarSearchResult } from "../../../../../../contracts/projects"
+import { SIDEBAR_SEARCH_CONFIG } from "../../../../constants"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
+import { splitHighlightParts } from "../../../../utils/text"
 import {
   newestFirst,
   useChatStore,
@@ -22,18 +24,13 @@ export function ProjectSidebar() {
   const sessions = useProjectStore((state) => state.sessions)
   const activeSessionId = useProjectStore((state) => state.activeSessionId)
   const expandedProjects = useProjectStore((state) => state.expandedProjects)
-  const selectProject = useProjectStore((state) => state.selectProject)
-  const toggleExpandProject = useProjectStore((state) => state.toggleExpandProject)
-  const selectSession = useProjectStore((state) => state.selectSession)
-  const createNewChat = useProjectStore((state) => state.createNewChat)
-  const renameSession = useProjectStore((state) => state.renameSession)
-  const deleteSession = useProjectStore((state) => state.deleteSession)
+  const { selectProject, toggleExpandProject, selectSession, createNewChat, renameSession, deleteSession } =
+    useProjectStore((state) => state.actions)
 
   const isCustomizeActive = useCustomizeStore((state) => state.isOpen)
-  const openCustomize = useCustomizeStore((state) => state.openCustomize)
-  const closeCustomize = useCustomizeStore((state) => state.closeCustomize)
+  const { openCustomize, closeCustomize } = useCustomizeStore((state) => state.actions)
 
-  const clearSessionRuntime = useChatStore((state) => state.clearSessionRuntime)
+  const clearSessionRuntime = useChatStore((state) => state.actions.clearSessionRuntime)
 
   const displaySelectedProjectId = isCustomizeActive ? null : selectedProjectId
   const displayActiveSessionId = isCustomizeActive ? null : activeSessionId
@@ -52,7 +49,7 @@ export function ProjectSidebar() {
     let stale = false
     const timer = setTimeout(() => {
       window.desktop.searchSidebar(query).then((result) => !stale && setHits(result)).catch(() => !stale && setHits(null))
-    }, 150)
+    }, SIDEBAR_SEARCH_CONFIG.DEBOUNCE_MS)
     return () => {
       stale = true
       clearTimeout(timer)
@@ -225,7 +222,17 @@ export function ProjectSidebar() {
                         />
                       </svg>
                     )}
-                    <span className={styles.projectName}>{highlight(project.name, query)}</span>
+                    <span className={styles.projectName}>
+                      {splitHighlightParts(project.name, query).map((part, idx) =>
+                        part.isMatch ? (
+                          <mark key={idx} className={styles.searchMark}>
+                            {part.text}
+                          </mark>
+                        ) : (
+                          part.text
+                        ),
+                      )}
+                    </span>
                   </button>
                 </div>
 
@@ -275,7 +282,15 @@ export function ProjectSidebar() {
                                 />
                               ) : (
                                 <span className={styles.treeSessionTitle}>
-                                  {highlight(session.title, query)}
+                                  {splitHighlightParts(session.title, query).map((part, idx) =>
+                                    part.isMatch ? (
+                                      <mark key={idx} className={styles.searchMark}>
+                                        {part.text}
+                                      </mark>
+                                    ) : (
+                                      part.text
+                                    ),
+                                  )}
                                 </span>
                               )}
                             </span>
@@ -378,13 +393,5 @@ export function ProjectSidebar() {
         </div>
       )}
     </div>
-  )
-}
-
-function highlight(text: string, query: string | undefined) {
-  if (!query) return text
-  const pattern = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
-  return text.split(pattern).map((part, index) =>
-    index % 2 ? <mark key={index} className={styles.searchMark}>{part}</mark> : part,
   )
 }

@@ -1,4 +1,5 @@
 import { IPC_CHANNELS } from "../../constants/ipcChannels"
+import { DEBUG_LOG_CONFIG } from "../constants"
 import { toast, useDebugLogStore } from "../stores"
 import { classifyAuthError, formatGeneralErrorMessage } from "./error-message"
 
@@ -33,11 +34,17 @@ export function installDesktopBridgeInterceptor(): () => void {
       return
     }
 
-    useDebugLogStore.getState().appendLog({
-      category: "ipc",
-      level: "error",
+    const logEntry = {
+      category: "ipc" as const,
+      level: "error" as const,
       message: `[IPC !!] ${detail.channel}: ${detail.message}`,
-    })
+    }
+    useDebugLogStore.getState().actions.appendLog(logEntry)
+    if (typeof BroadcastChannel !== "undefined") {
+      const ch = new BroadcastChannel(DEBUG_LOG_CONFIG.SYNC_CHANNEL)
+      ch.postMessage({ type: "ipc-error-log", entry: logEntry })
+      ch.close()
+    }
 
     if (detail.channel === IPC_CHANNELS.AUTH_LOGIN) {
       const classified = classifyAuthError(detail.message)
@@ -55,7 +62,7 @@ export function installDesktopBridgeInterceptor(): () => void {
 
   if (window.desktop && typeof window.desktop.subscribeLogEvents === "function") {
     const unsubLogs = window.desktop.subscribeLogEvents((entry) => {
-      useDebugLogStore.getState().appendLog({
+      useDebugLogStore.getState().actions.appendLog({
         category: entry.category,
         level: entry.level,
         message: entry.message,

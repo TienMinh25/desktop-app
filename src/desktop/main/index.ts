@@ -21,7 +21,7 @@ import { AuthService, AuthServiceError } from "./auth-service"
 import { AuthSessionStore } from "./auth-session-store"
 import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
-import { registerIpcHandler, setLogForwarder } from "../../infrastructure/logging/logger"
+import { registerIpcHandler, setLogForwarder, type ForwardedLogEntry } from "../../infrastructure/logging/logger"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
@@ -29,7 +29,26 @@ import type { ProjectsListResult } from "../../contracts/projects"
 
 getSystemDispatcher()
 
+const MAX_LOGS_PER_CATEGORY = 300
+const logHistory: ForwardedLogEntry[] = []
+
+function appendBoundedLog<T extends { category: "api" | "ipc" }>(list: T[], entry: T): T[] {
+    let categoryCount = 0
+    const next: T[] = [entry]
+    categoryCount += 1
+    for (const item of list) {
+        if (item.category === entry.category) {
+            if (categoryCount >= MAX_LOGS_PER_CATEGORY) continue
+            categoryCount += 1
+        }
+        next.push(item)
+    }
+    return next
+}
+
 setLogForwarder((entry) => {
+    const updated = appendBoundedLog(logHistory, entry)
+    logHistory.splice(0, logHistory.length, ...updated)
     for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
             win.webContents.send(IPC_CHANNELS.APP_LOG_EVENT, entry)
@@ -39,6 +58,7 @@ setLogForwarder((entry) => {
 
 const { autoUpdater } = electronUpdater
 
+let logWindow: BrowserWindow | null = null
 let harnessProcess: UtilityProcess | null = null
 let lspSettingsStore: LspSettingsStore | null = null
 let authService: AuthService | null = null
@@ -188,30 +208,42 @@ function requireTrustedSender(event: Electron.IpcMainInvokeEvent) {
 }
 
 // Returns the cached list at once, the fresh list arrives as projects:changed
-ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async (event) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.PROJECTS_LIST, async (event) => {
     requireTrustedSender(event)
     void syncProjectsInBackground()
     return projectsListResult()
 })
-ipcMain.handle(IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SESSIONS_LIST, async (event, projectId: unknown) => {
     requireTrustedSender(event)
     return listSessions(getDb(), requireText(projectId, "projectId"))
 })
-ipcMain.handle(IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SESSIONS_CREATE, async (event, projectId: unknown, title: unknown) => {
     requireTrustedSender(event)
     return createSession(getDb(), requireText(projectId, "projectId"), app.getPath("home"), requireText(title, "title"))
 })
-ipcMain.handle(IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, title: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SESSIONS_RENAME, async (event, sessionId: unknown, title: unknown) => {
     requireTrustedSender(event)
     renameSession(getDb(), requireText(sessionId, "sessionId"), requireText(title, "title"))
 })
-ipcMain.handle(IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SESSIONS_DELETE, async (event, sessionId: unknown) => {
     requireTrustedSender(event)
     deleteSession(getDb(), requireText(sessionId, "sessionId"))
 })
-ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
     requireTrustedSender(event)
     return searchSidebar(getDb(), requireText(query, "query"))
+})
+registerIpcHandler(ipcMain, IPC_CHANNELS.DEBUG_OPEN_LOG_WINDOW, async (event) => {
+    requireTrustedSender(event)
+    openLogWindow()
+})
+registerIpcHandler(ipcMain, IPC_CHANNELS.DEBUG_GET_LOG_HISTORY, async (event) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Untrusted IPC sender")
+    return logHistory
+})
+registerIpcHandler(ipcMain, IPC_CHANNELS.DEBUG_CLEAR_LOGS, async (event) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Untrusted IPC sender")
+    logHistory.length = 0
 })
 
 // Renderer input is untrusted, reject empty values before writing
@@ -359,6 +391,11 @@ function createWindow() {
             nodeIntegration: false,
         }
     })
+    window.on("closed", () => {
+        if (logWindow && !logWindow.isDestroyed()) {
+            logWindow.close()
+        }
+    })
     window.webContents.setWindowOpenHandler(({ url }) => {
         if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("mailto:")) {
             void shell.openExternal(url)
@@ -371,6 +408,43 @@ function createWindow() {
         return
     }
     void window.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)))
+}
+
+function openLogWindow() {
+    if (envConfig.APP_ENV === "prod") return
+    if (logWindow && !logWindow.isDestroyed()) {
+        if (logWindow.isMinimized()) logWindow.restore()
+        logWindow.focus()
+        return
+    }
+    const child = new BrowserWindow({
+        width: 980,
+        height: 700,
+        minWidth: 720,
+        minHeight: 480,
+        title: "C-CodeX Runtime Debug Logs",
+        autoHideMenuBar: true,
+        backgroundColor: "#0c0c0d",
+        webPreferences: {
+            preload: fileURLToPath(new URL("../preload/index.cjs", import.meta.url)),
+            contextIsolation: true,
+            nodeIntegration: false,
+        },
+    })
+    logWindow = child
+    child.on("closed", () => {
+        if (logWindow === child) logWindow = null
+    })
+    const rendererUrl = process.env.ELECTRON_RENDERER_URL
+    if (rendererUrl) {
+        const url = new URL(rendererUrl)
+        url.searchParams.set("view", "logs")
+        void child.loadURL(url.toString())
+        return
+    }
+    void child.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)), {
+        query: { view: "logs" },
+    })
 }
 ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
@@ -387,7 +461,7 @@ ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (event) => {
 ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close()
 })
-ipcMain.handle(IPC_CHANNELS.SELECT_FOLDER, async (event) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.SELECT_FOLDER, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = win
         ? await dialog.showOpenDialog(win, { properties: ["openDirectory"] })
@@ -427,18 +501,18 @@ registerIpcHandler(
         return await mcpRegistryClient.getServerVersion(payload.serverName, payload.version ?? "latest")
     },
 )
-ipcMain.handle(IPC_CHANNELS.LSP_LIST_SERVERS, async (event) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.LSP_LIST_SERVERS, async (event) => {
     if (!BrowserWindow.fromWebContents(event.sender)) return []
     return await getLspSettingsStore().list()
 })
-ipcMain.handle(IPC_CHANNELS.LSP_RESCAN_SERVERS, async (event) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.LSP_RESCAN_SERVERS, async (event) => {
     if (!BrowserWindow.fromWebContents(event.sender)) return []
     const statuses = await getLspSettingsStore().rescan()
     const servers = await getLspSettingsStore().harnessConfigs()
     forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers })
     return statuses
 })
-ipcMain.handle(IPC_CHANNELS.LSP_SAVE_SETTINGS, async (event, settings: LspSettings) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.LSP_SAVE_SETTINGS, async (event, settings: LspSettings) => {
     if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Untrusted LSP settings request")
     const store = getLspSettingsStore()
     const statuses = await store.save(settings)
@@ -446,14 +520,14 @@ ipcMain.handle(IPC_CHANNELS.LSP_SAVE_SETTINGS, async (event, settings: LspSettin
     forwardHarnessCommand({ type: HARNESS_COMMAND_TYPES.LSP_CONFIGURE, servers })
     return statuses
 })
-ipcMain.handle(IPC_CHANNELS.LSP_OPEN_GUIDE, async (event, serverId: string) => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.LSP_OPEN_GUIDE, async (event, serverId: string) => {
     if (!BrowserWindow.fromWebContents(event.sender)) return { opened: false }
     const server = LSP_SERVER_CATALOG.find((item) => item.id === serverId)
     if (!server) return { opened: false }
     await shell.openExternal(server.guideUrl)
     return { opened: true }
 })
-ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.UPDATER_CHECK, async () => {
     if (!app.isPackaged) {
         return { status: "available", version: "1.2.0" } satisfies AppUpdaterState
     }
@@ -463,7 +537,7 @@ ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
         version: result?.updateInfo?.version ?? app.getVersion(),
     } satisfies AppUpdaterState
 })
-ipcMain.handle(IPC_CHANNELS.UPDATER_START, async () => {
+registerIpcHandler(ipcMain, IPC_CHANNELS.UPDATER_START, async () => {
     if (!app.isPackaged) {
         broadcastUpdaterState({ status: "downloading", percent: 45, transferred: 38, total: 84 })
         setTimeout(() => {

@@ -9,6 +9,7 @@ interface ConnectorsTabViewProps {
   filteredYourItems: McpConnectorItem[]
   isLoadingInitial: boolean
   isLoadingMore: boolean
+  isSearchTooShort: boolean
   loadError: string | null
   nextCursor: string | null
   sentinelRef: RefObject<HTMLDivElement | null>
@@ -23,6 +24,7 @@ export function ConnectorsTabView({
   filteredYourItems,
   isLoadingInitial,
   isLoadingMore,
+  isSearchTooShort,
   loadError,
   nextCursor,
   sentinelRef,
@@ -54,6 +56,17 @@ export function ConnectorsTabView({
             onToggleConnect={onToggleConnect}
           />
         ))}
+      </div>
+    )
+  }
+
+  if (isSearchTooShort) {
+    return (
+      <div className={styles.skillsNoticeCard}>
+        <h3 className={styles.skillsNoticeTitle}>Enter at least 3 characters</h3>
+        <p className={styles.skillsNoticeText}>
+          Type at least 3 characters to search MCP connectors from the registry.
+        </p>
       </div>
     )
   }

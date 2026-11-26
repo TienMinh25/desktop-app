@@ -114,4 +114,15 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on(IPC_CHANNELS.APP_LOG_EVENT, handler)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.APP_LOG_EVENT, handler)
   },
+  openLogWindow: (): Promise<void> => invokeChannel(IPC_CHANNELS.DEBUG_OPEN_LOG_WINDOW),
+  getLogHistory: (): Promise<
+    Array<{
+      category: "api" | "ipc"
+      level: "info" | "error"
+      env: string
+      message: string
+      meta?: unknown
+    }>
+  > => invokeChannel(IPC_CHANNELS.DEBUG_GET_LOG_HISTORY),
+  clearLogHistory: (): Promise<void> => invokeChannel(IPC_CHANNELS.DEBUG_CLEAR_LOGS),
 })

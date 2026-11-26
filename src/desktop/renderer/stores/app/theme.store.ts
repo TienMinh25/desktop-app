@@ -10,8 +10,10 @@ export type Theme = "dark" | "light"
 
 interface ThemeState {
   theme: Theme
-  setTheme: (theme: Theme) => void
-  toggleTheme: () => void
+  actions: {
+    setTheme: (theme: Theme) => void
+    toggleTheme: () => void
+  }
 }
 
 function applyThemeAttribute(theme: Theme): void {
@@ -25,21 +27,23 @@ export const useThemeStore = createPersistedAppStore<ThemeState, Pick<ThemeState
   (set) => ({
     theme: "dark",
 
-    setTheme: (theme) => {
-      applyThemeAttribute(theme)
-      set({ theme }, false, THEME_ACTIONS.SET)
-    },
+    actions: {
+      setTheme: (theme) => {
+        applyThemeAttribute(theme)
+        set({ theme }, false, THEME_ACTIONS.SET)
+      },
 
-    toggleTheme: () =>
-      set(
-        (state) => {
-          const next: Theme = state.theme === "dark" ? "light" : "dark"
-          applyThemeAttribute(next)
-          return { theme: next }
-        },
-        false,
-        THEME_ACTIONS.TOGGLE,
-      ),
+      toggleTheme: () =>
+        set(
+          (state) => {
+            const next: Theme = state.theme === "dark" ? "light" : "dark"
+            applyThemeAttribute(next)
+            return { theme: next }
+          },
+          false,
+          THEME_ACTIONS.TOGGLE,
+        ),
+    },
   }),
   {
     name: STORAGE_KEYS.THEME,

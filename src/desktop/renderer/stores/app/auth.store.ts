@@ -53,13 +53,15 @@ interface AuthStoreState {
   loginResetCounter: number
   isSignOutConfirmOpen: boolean
 
-  initAuth: () => () => void
-  loginSuccess: (username: string) => void
-  agreeTerms: () => void
-  disagreeTerms: () => void
-  openSignOutConfirm: () => void
-  closeSignOutConfirm: () => void
-  confirmSignOut: () => void
+  actions: {
+    initAuth: () => () => void
+    loginSuccess: (username: string) => void
+    agreeTerms: () => void
+    disagreeTerms: () => void
+    openSignOutConfirm: () => void
+    closeSignOutConfirm: () => void
+    confirmSignOut: () => void
+  }
 }
 
 export const useAuthStore = createAppStore<AuthStoreState>("AuthStore", (set, get) => ({
@@ -70,7 +72,8 @@ export const useAuthStore = createAppStore<AuthStoreState>("AuthStore", (set, ge
       loginResetCounter: 0,
       isSignOutConfirmOpen: false,
 
-      initAuth: () => {
+      actions: {
+        initAuth: () => {
         let active = true
         let receivedAuthEvent = false
 
@@ -137,13 +140,14 @@ export const useAuthStore = createAppStore<AuthStoreState>("AuthStore", (set, ge
       closeSignOutConfirm: () =>
         set({ isSignOutConfirmOpen: false }, false, AUTH_ACTIONS.CLOSE_SIGN_OUT_CONFIRM),
 
-      confirmSignOut: () => {
-        set({ isSignOutConfirmOpen: false }, false, AUTH_ACTIONS.CONFIRM_SIGN_OUT)
-        void window.desktop
-          .logout()
-          .catch((error) => toast.error(formatGeneralErrorMessage(error, "Signed out locally")))
-          .finally(() =>
-            set({ authState: { authenticated: false, username: null } }, false, AUTH_ACTIONS.LOGGED_OUT),
-          )
+        confirmSignOut: () => {
+          set({ isSignOutConfirmOpen: false }, false, AUTH_ACTIONS.CONFIRM_SIGN_OUT)
+          void window.desktop
+            .logout()
+            .catch((error) => toast.error(formatGeneralErrorMessage(error, "Signed out locally")))
+            .finally(() =>
+              set({ authState: { authenticated: false, username: null } }, false, AUTH_ACTIONS.LOGGED_OUT),
+            )
+        },
       },
 }))

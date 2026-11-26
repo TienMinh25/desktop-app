@@ -49,7 +49,7 @@ export function LanguageServersTabView() {
     try {
       const statuses = await window.desktop.saveLspSettings(next)
       applyStatuses(statuses)
-      void useCustomizeStore.getState().refreshLspStatus()
+      void useCustomizeStore.getState().actions.refreshLspStatus()
       if (successMessage) toast.success(successMessage)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Could not save language-server settings")
@@ -64,7 +64,7 @@ export function LanguageServersTabView() {
     setIsSaving(true)
     try {
       applyStatuses(await window.desktop.rescanLspServers())
-      void useCustomizeStore.getState().refreshLspStatus()
+      void useCustomizeStore.getState().actions.refreshLspStatus()
       toast.info("Language servers checked again")
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : "Could not check language servers")
@@ -197,8 +197,20 @@ function ServerRow({ server, command, isSaving, custom = false, onCommandChange,
             <button className={styles.textButton} type="button" onClick={onEdit} disabled={isSaving}>Edit</button>
             <button className={styles.textButtonDanger} type="button" onClick={onRemove} disabled={isSaving}>Remove</button>
           </> : <label className={styles.toggleLabel}>
-            <span>{server.enabled ? "On" : "Off"}</span>
-            <input type="checkbox" checked={server.enabled} disabled={!server.installed || isSaving} onChange={(event) => onToggle?.(event.target.checked)} aria-label={`Enable ${server.language} language server`} />
+            <span className={styles.toggleText}>{server.requestedEnabled ? "On" : "Off"}</span>
+            <span className={styles.switchControl}>
+              <input
+                className={styles.switchInput}
+                type="checkbox"
+                checked={server.requestedEnabled}
+                disabled={isSaving}
+                onChange={(event) => onToggle?.(event.target.checked)}
+                aria-label={`Enable ${server.language} language server`}
+              />
+              <span className={styles.switchTrack} aria-hidden="true">
+                <span className={styles.switchThumb} />
+              </span>
+            </span>
           </label>}
         </div>
       </div>

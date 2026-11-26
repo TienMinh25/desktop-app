@@ -24,8 +24,10 @@ const DEFAULT_DURATIONS: Record<ToastType, number> = {
 
 interface ToastState {
   activeToast: ToastItem | null
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void
-  dismissToast: () => void
+  actions: {
+    showToast: (message: string, type?: ToastType, durationMs?: number) => void
+    dismissToast: () => void
+  }
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -33,42 +35,44 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null
 export const useToastStore = createAppStore<ToastState>("ToastStore", (set) => ({
   activeToast: null,
 
-  showToast: (message, type = "info", durationMs) => {
-    if (toastTimer) {
-      clearTimeout(toastTimer)
-      toastTimer = null
-    }
-    const resolvedDuration = durationMs ?? DEFAULT_DURATIONS[type]
-    const id = crypto.randomUUID()
-    set({ activeToast: { id, message, type, durationMs: resolvedDuration } }, false, TOAST_ACTIONS.SHOW)
+  actions: {
+    showToast: (message, type = "info", durationMs) => {
+      if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+      }
+      const resolvedDuration = durationMs ?? DEFAULT_DURATIONS[type]
+      const id = crypto.randomUUID()
+      set({ activeToast: { id, message, type, durationMs: resolvedDuration } }, false, TOAST_ACTIONS.SHOW)
 
-    toastTimer = setTimeout(() => {
-      set(
-        (state) => (state.activeToast?.id === id ? { activeToast: null } : state),
-        false,
-        TOAST_ACTIONS.AUTO_DISMISS,
-      )
-      toastTimer = null
-    }, resolvedDuration)
-  },
+      toastTimer = setTimeout(() => {
+        set(
+          (state) => (state.activeToast?.id === id ? { activeToast: null } : state),
+          false,
+          TOAST_ACTIONS.AUTO_DISMISS,
+        )
+        toastTimer = null
+      }, resolvedDuration)
+    },
 
-  dismissToast: () => {
-    if (toastTimer) {
-      clearTimeout(toastTimer)
-      toastTimer = null
-    }
-    set({ activeToast: null }, false, TOAST_ACTIONS.DISMISS)
+    dismissToast: () => {
+      if (toastTimer) {
+        clearTimeout(toastTimer)
+        toastTimer = null
+      }
+      set({ activeToast: null }, false, TOAST_ACTIONS.DISMISS)
+    },
   },
 }))
 
 /** Helper callable inside or outside React components. */
 export const toast = {
   info: (message: string, durationMs?: number) =>
-    useToastStore.getState().showToast(message, "info", durationMs),
+    useToastStore.getState().actions.showToast(message, "info", durationMs),
   success: (message: string, durationMs?: number) =>
-    useToastStore.getState().showToast(message, "success", durationMs),
+    useToastStore.getState().actions.showToast(message, "success", durationMs),
   warning: (message: string, durationMs?: number) =>
-    useToastStore.getState().showToast(message, "warning", durationMs),
+    useToastStore.getState().actions.showToast(message, "warning", durationMs),
   error: (message: string, durationMs?: number) =>
-    useToastStore.getState().showToast(message, "error", durationMs),
+    useToastStore.getState().actions.showToast(message, "error", durationMs),
 }

@@ -1,5 +1,5 @@
 import { HARNESS_EVENT_TYPES, type HarnessEvent } from "../contracts/events"
-import type { DeleteSessionCommand, SubmitPromptCommand } from "../contracts/commands"
+import type { CancelChatCommand, DeleteSessionCommand, SubmitPromptCommand } from "../contracts/commands"
 import type { ChatModel } from "../domain/chat/types"
 import { AgentLoop } from "./agent/agent-loop"
 import { homedir } from "node:os"
@@ -35,6 +35,7 @@ interface SessionPromptQueue {
 export class HarnessRuntime {
   private readonly sessionQueues = new Map<string, SessionPromptQueue>()
   private readonly sessionAgents = new Map<string, AgentLoop>()
+  private readonly sessionAbortControllers = new Map<string, AbortController>()
   private readonly todoStates = new TodoStateStore()
 
   constructor(private readonly options: HarnessRuntimeOptions) {}
@@ -60,8 +61,14 @@ export class HarnessRuntime {
     void this.drainSession(command.sessionId, queue)
   }
 
+  cancelSession(command: CancelChatCommand): void {
+    this.options.cancelQuestionsForSession?.(command.sessionId)
+    this.sessionAbortControllers.get(command.sessionId)?.abort()
+  }
+
   deleteSession(command: DeleteSessionCommand): void {
     this.options.cancelQuestionsForSession?.(command.sessionId)
+    this.sessionAbortControllers.get(command.sessionId)?.abort()
     const queue = this.sessionQueues.get(command.sessionId)
     if (!queue) {
       this.cleanupSession(command.sessionId)
@@ -146,9 +153,12 @@ export class HarnessRuntime {
       }
 
       model = this.options.createChatModel(command.model)
+      const abortController = new AbortController()
+      this.sessionAbortControllers.set(command.sessionId, abortController)
       const result = await loop.run(model, {
         modelName: command.model,
         messages,
+        signal: abortController.signal,
         context: {
           workspacePath,
           requestId: command.requestId,
@@ -173,8 +183,13 @@ export class HarnessRuntime {
       await this.options.conversations.saveMessages(command.sessionId, result.messages)
       emit({ type: HARNESS_EVENT_TYPES.CHAT_COMPLETED, requestId: command.requestId, sessionId: command.sessionId })
     } catch (error) {
-      fail(error instanceof Error ? error.message : "Unknown chat error")
+      if (this.sessionAbortControllers.get(command.sessionId)?.signal.aborted) {
+        emit({ type: HARNESS_EVENT_TYPES.CHAT_COMPLETED, requestId: command.requestId, sessionId: command.sessionId })
+      } else {
+        fail(error instanceof Error ? error.message : "Unknown chat error")
+      }
     } finally {
+      this.sessionAbortControllers.delete(command.sessionId)
       try { environment?.close() } catch { /* Keep queue cleanup running if adapter cleanup fails. */ }
       try { await model?.close?.() } catch { /* A transport cleanup error must not block the next prompt. */ }
       if (todoScope.type === "request") this.todoStates.clearRequest(todoScope.id)

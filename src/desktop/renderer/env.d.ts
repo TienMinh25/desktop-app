@@ -53,6 +53,17 @@ declare global {
     renameSession: (sessionId: string, title: string) => Promise<void>
     deleteSession: (sessionId: string) => Promise<void>
     searchSidebar: (query: string) => Promise<SidebarSearchResult>
+    openLogWindow: () => Promise<void>
+    getLogHistory: () => Promise<
+      Array<{
+        category: "api" | "ipc"
+        level: "info" | "error"
+        env: string
+        message: string
+        meta?: unknown
+      }>
+    >
+    clearLogHistory: () => Promise<void>
   }
 
   interface Window {

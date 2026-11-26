@@ -4,8 +4,12 @@ import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../contracts/mess
 import styles from "./App.module.scss"
 import { TitleBar } from "./components/layout/TitleBar/TitleBar"
 import { ConfirmModal } from "./components/ui/ConfirmModal/ConfirmModal"
-import { DebugLogViewer } from "./components/ui/DebugLogModal/DebugLogModal"
-import { APP_CONFIG } from "./constants"
+import {
+  DebugLogViewer,
+  DebugLogWindowPage,
+} from "./components/ui/DebugLogViewer/DebugLogViewer"
+import { buildLocalStoreSnapshots } from "./utils/debug-log"
+import { APP_CONFIG, DEBUG_LOG_CONFIG } from "./constants"
 import { LoginPage } from "./pages/LoginPage/LoginPage"
 import { NoProjectPage } from "./pages/NoProjectPage/NoProjectPage"
 import { WorkspacePage } from "./pages/WorkspacePage/WorkspacePage"
@@ -15,6 +19,7 @@ import {
   useAuthStore,
   useChatStore,
   useCustomizeStore,
+  useDebugLogStore,
   useProjectStore,
   useThemeStore,
   useToastStore,
@@ -24,10 +29,9 @@ import { installDesktopBridgeInterceptor } from "./utils/ipc-interceptor"
 
 // Mounts on every sign-in, so project sync & chat runtime reset cleanly per session
 function SignedInApp() {
-  const initProjects = useProjectStore((state) => state.initProjects)
-  const resetProjects = useProjectStore((state) => state.reset)
-  const resetChat = useChatStore((state) => state.reset)
-  const resetCustomize = useCustomizeStore((state) => state.reset)
+  const { initProjects, reset: resetProjects } = useProjectStore((state) => state.actions)
+  const { reset: resetChat } = useChatStore((state) => state.actions)
+  const { reset: resetCustomize } = useCustomizeStore((state) => state.actions)
   const isLoaded = useProjectStore((state) => state.isLoaded)
   const loadError = useProjectStore((state) => state.loadError)
   const assignedProjects = useProjectStore((state) => state.assignedProjects)
@@ -53,19 +57,31 @@ function AppContent() {
   const isAuthLoading = useAuthStore((state) => state.isAuthLoading)
   useAuthStore((state) => state.termsRevision)
   const isSignOutConfirmOpen = useAuthStore((state) => state.isSignOutConfirmOpen)
-  const initAuth = useAuthStore((state) => state.initAuth)
-  const confirmSignOut = useAuthStore((state) => state.confirmSignOut)
-  const closeSignOutConfirm = useAuthStore((state) => state.closeSignOutConfirm)
+  const { initAuth, confirmSignOut, closeSignOutConfirm } = useAuthStore((state) => state.actions)
 
   const theme = useThemeStore((state) => state.theme)
   const activeToast = useToastStore((state) => state.activeToast)
-  const dismissToast = useToastStore((state) => state.dismissToast)
+  const { dismissToast } = useToastStore((state) => state.actions)
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme)
   }, [theme])
 
   useEffect(() => installDesktopBridgeInterceptor(), [])
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return
+    const channel = new BroadcastChannel(DEBUG_LOG_CONFIG.SYNC_CHANNEL)
+    channel.onmessage = (event: MessageEvent<{ type?: string }>) => {
+      if (event.data?.type === "request-stores") {
+        channel.postMessage({ type: "stores-snapshot", snapshots: buildLocalStoreSnapshots() })
+      } else if (event.data?.type === "clear-logs") {
+        useDebugLogStore.getState().actions.clearLogs()
+      } else if (event.data?.type === "toggle-capturing") {
+        useDebugLogStore.getState().actions.toggleCapturing()
+      }
+    }
+    return () => channel.close()
+  }, [])
   useEffect(() => initAuth(), [initAuth])
 
   useEffect(() => {
@@ -157,8 +173,20 @@ function AppContent() {
   )
 }
 
+function DebugLogWindowApp() {
+  const theme = useThemeStore((state) => state.theme)
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme)
+  }, [theme])
+
+  return <DebugLogWindowPage />
+}
+
+const isLogWindow = new URLSearchParams(window.location.search).get("view") === "logs"
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AppContent />
+    {isLogWindow ? <DebugLogWindowApp /> : <AppContent />}
   </StrictMode>,
 )

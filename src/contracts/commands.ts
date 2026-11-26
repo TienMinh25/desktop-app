@@ -18,6 +18,11 @@ export const SubmitPromptCommandSchema = z.object({
   approvalMode: z.enum(["manual", "auto-safe", "full-access"] satisfies readonly ApprovalMode[]),
 }).strict()
 
+export const CancelChatCommandSchema = z.object({
+  type: z.literal(HARNESS_COMMAND_TYPES.CHAT_CANCEL),
+  sessionId: shortId,
+}).strict()
+
 export const DeleteSessionCommandSchema = z.object({
   type: z.literal(HARNESS_COMMAND_TYPES.SESSION_DELETE),
   sessionId: shortId,
@@ -41,11 +46,12 @@ export const LspConfigureCommandSchema = z.object({
 }).strict()
 
 export const HarnessCommandSchema = z.discriminatedUnion("type", [
-  PingCommandSchema, SubmitPromptCommandSchema, DeleteSessionCommandSchema, PermissionResponseCommandSchema, QuestionResponseCommandSchema, LspConfigureCommandSchema,
+  PingCommandSchema, SubmitPromptCommandSchema, CancelChatCommandSchema, DeleteSessionCommandSchema, PermissionResponseCommandSchema, QuestionResponseCommandSchema, LspConfigureCommandSchema,
 ])
 
 export type PingCommand = z.infer<typeof PingCommandSchema>
 export type SubmitPromptCommand = z.infer<typeof SubmitPromptCommandSchema>
+export type CancelChatCommand = z.infer<typeof CancelChatCommandSchema>
 export type DeleteSessionCommand = z.infer<typeof DeleteSessionCommandSchema>
 export type PermissionResponseCommand = z.infer<typeof PermissionResponseCommandSchema>
 export type QuestionResponseCommand = z.infer<typeof QuestionResponseCommandSchema>

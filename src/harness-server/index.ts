@@ -80,6 +80,9 @@ parentPort.on("message", (messageEvent) => {
     case HARNESS_COMMAND_TYPES.CHAT_SUBMIT:
       runtime.submit(command)
       return
+    case HARNESS_COMMAND_TYPES.CHAT_CANCEL:
+      runtime.cancelSession(command)
+      return
     case HARNESS_COMMAND_TYPES.SESSION_DELETE:
       runtime.deleteSession(command)
       return
