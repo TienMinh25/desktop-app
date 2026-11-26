@@ -1,7 +1,7 @@
 import { decodeParts, encodeParts, type StoredMessagePart } from "../../contracts/message-parts"
-import { pruneOrphanBlobs, type Db } from "../../infrastructure/db/sqlite"
+import type { Db } from "../../infrastructure/db/sqlite"
 import type { MediaBlob } from "../context/media"
-import type { HistoryTurn, TurnState } from "../context/types"
+import type { HistoryTurn, TurnRowState } from "../context/types"
 import {
   decodeMessageParts,
   finishErrorMessage,
@@ -22,13 +22,13 @@ interface MessageRow {
   seq: number
   role: "user" | "assistant"
   parts_json: string
-  state: TurnState | null
+  state: TurnRowState | null
 }
 
 interface ExistingTurnRow {
   id: number
   seq: number
-  state: TurnState | null
+  state: TurnRowState | null
   workspace_path: string | null
 }
 
@@ -180,10 +180,6 @@ export class SqliteTurnStore implements TurnStore {
 
       this.persistMedia(turn.assistantMessageId, items, blobs, timestamp)
     }).immediate()
-  }
-
-  pruneOrphanBlobs(): number {
-    return pruneOrphanBlobs(this.db)
   }
 
   loadBlob(sha256: string): Buffer | null {

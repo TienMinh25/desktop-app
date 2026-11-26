@@ -483,16 +483,6 @@ function runTurnStoreSuite(name: string, createHarness: () => StoreHarness) {
       expect(h.getArtifactRows("s2", t2.turn.assistantMessageId)).toHaveLength(2)
       expect(h.store.loadBlob(sharedSha)).toEqual(imageBytes)
       expect(h.store.loadBlob(uniqueSha)).toEqual(uniqueBytes)
-      expect(h.store.pruneOrphanBlobs()).toBe(0)
-
-      h.deleteSession("s1")
-      expect(h.store.pruneOrphanBlobs()).toBe(1)
-      expect(h.store.loadBlob(uniqueSha)).toBeNull()
-      expect(h.store.loadBlob(sharedSha)).toEqual(imageBytes)
-
-      h.deleteSession("s2")
-      expect(h.store.pruneOrphanBlobs()).toBe(1)
-      expect(h.store.loadBlob(sharedSha)).toBeNull()
     })
   })
 }

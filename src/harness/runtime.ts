@@ -137,7 +137,7 @@ export class HarnessRuntime {
     let environment: ExecutionEnvironment | undefined
     let model: ChatModel | undefined
     let turn: TurnHandle | undefined
-    let finishAttempted = false
+    let finished = false
 
     try {
       const begun = this.options.turns.beginTurn({
@@ -186,6 +186,7 @@ export class HarnessRuntime {
         environment: activeEnvironment,
         loadBlob: (sha256) => this.options.turns.loadBlob(sha256),
         readFileBase64: (filePath, maxBytes) => readMediaFileBase64(activeEnvironment, filePath, maxBytes),
+        mediaInput: toolContext.mediaInput,
         platform: this.options.platform,
         now: this.options.now?.(),
       })
@@ -242,14 +243,15 @@ export class HarnessRuntime {
         onToolFailed(toolCallId, toolName, message) { emit({ type: HARNESS_EVENT_TYPES.TOOL_FAILED, requestId: command.requestId, sessionId: command.sessionId, toolCallId, toolName, message }) },
       })
 
-      finishAttempted = true
       this.options.turns.finishTurn(turn, { items: result.finalBatch, state: "completed" })
+      finished = true
       emit({ type: HARNESS_EVENT_TYPES.CHAT_COMPLETED, requestId: command.requestId, sessionId: command.sessionId })
     } catch (error) {
       const message = error instanceof TurnGoneError
         ? "Session was deleted."
         : (error instanceof Error ? error.message : "Unknown chat error")
-      if (turn && !finishAttempted && !(error instanceof TurnGoneError)) {
+      // A failed completed write rolls back, so the row is still running and must be marked failed or the session stays blocked
+      if (turn && !finished && !(error instanceof TurnGoneError)) {
         try {
           this.options.turns.finishTurn(turn, { state: "failed", errorMessage: message })
         } catch (finishError) {

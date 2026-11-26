@@ -56,6 +56,7 @@ export class AgentLoop {
         throw new Error("Model stream ended without response.output-items")
       }
 
+      rejectLocalOnlyItems(outputItems)
       const calls = extractFunctionCalls(outputItems)
       if (calls.length === 0) {
         return { finalBatch: outputItems, assistantText }
@@ -98,6 +99,18 @@ function extractFunctionCalls(items: readonly ResponseOutputItem[]): ResponseFun
     calls.push(item)
   }
   return calls
+}
+
+// Tool outputs and media refs are written only by this process, so the model must never supply them
+const LOCAL_ONLY_TYPES = new Set(["function_call_output", "ccodex_media_ref"])
+
+function rejectLocalOnlyItems(items: readonly ResponseOutputItem[]): void {
+  for (const item of items) {
+    const content = "content" in item && Array.isArray(item.content) ? item.content : []
+    if (LOCAL_ONLY_TYPES.has(item.type) || content.some((part) => LOCAL_ONLY_TYPES.has((part as { type?: unknown }).type as string))) {
+      throw new Error(`Model returned a local-only item type: ${item.type}`)
+    }
+  }
 }
 
 function validateToolBatch(

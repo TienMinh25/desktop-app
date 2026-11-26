@@ -1,11 +1,11 @@
 import { Fragment, useState } from "react"
 import type { SessionHistoryTurn } from "../../../../../../contracts/session-history"
-import { INTERRUPTED_TURN_MESSAGE, type TurnState } from "../../../../stores"
+import { INTERRUPTED_TURN_MESSAGE, type RetiredTurnExtras, type TurnState } from "../../../../stores"
 import styles from "./ConversationStream.module.scss"
 
 interface ConversationStreamProps {
   historyTurns: SessionHistoryTurn[]
-  historyWarnings?: Readonly<Record<string, readonly string[]>>
+  retiredTurns?: Readonly<Record<string, RetiredTurnExtras>>
   pendingHistoryTurns?: readonly TurnState[]
   liveTurn?: TurnState
   onPermissionDecision: (id: string, decision: "allow" | "deny") => void
@@ -41,6 +41,28 @@ export function MediaPathRow({ path, name, problem, setProblem }: MediaPathRowPr
   )
 }
 
+function Warnings({ warnings }: { warnings: readonly string[] }) {
+  return warnings.map((warning, index) => (
+    <div key={`${index}-${warning}`} className={styles.warningLine} role="status">
+      {warning}
+    </div>
+  ))
+}
+
+function Todos({ todos }: { todos: TurnState["todos"] }) {
+  if (todos.length === 0) return null
+  return (
+    <section className={styles.todoCard}>
+      <strong>Tasks</strong>
+      {todos.map((todo) => (
+        <div key={todo.id} className={todo.status === "pending" ? styles.todoPending : undefined}>
+          {todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "◉" : "○"} {todo.content}
+        </div>
+      ))}
+    </section>
+  )
+}
+
 function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
   liveTurn: TurnState
 } & Pick<ConversationStreamProps, "onPermissionDecision" | "onQuestionAnswer">) {
@@ -68,11 +90,7 @@ function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
         </div>
         {liveTurn.isStreaming && <div className={styles.agentStatusLine}>Generating response…</div>}
         {liveTurn.toolStatus && <div className={styles.agentStatusLine}>{liveTurn.toolStatus}</div>}
-        {liveTurn.warnings.map((warning, index) => (
-          <div key={`${index}-${warning}`} className={styles.warningLine} role="status">
-            {warning}
-          </div>
-        ))}
+        <Warnings warnings={liveTurn.warnings} />
         {livePermission && (
           <section className={styles.permissionCard}>
             <strong>Allow {livePermission.tool} to {livePermission.action}?</strong>
@@ -110,16 +128,7 @@ function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
             </form>
           </section>
         )}
-        {liveTurn.todos.length > 0 && (
-          <section className={styles.todoCard}>
-            <strong>Tasks</strong>
-            {liveTurn.todos.map((todo) => (
-              <div key={todo.id} className={todo.status === "pending" ? styles.todoPending : undefined}>
-                {todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "◉" : "○"} {todo.content}
-              </div>
-            ))}
-          </section>
-        )}
+        <Todos todos={liveTurn.todos} />
         {liveTurn.error && <div className={styles.agentStatusLine}>{liveTurn.error}</div>}
       </div>
     </>
@@ -128,7 +137,7 @@ function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
 
 export function ConversationStream({
   historyTurns,
-  historyWarnings = {},
+  retiredTurns = {},
   pendingHistoryTurns = [],
   liveTurn,
   onPermissionDecision,
@@ -193,11 +202,12 @@ export function ConversationStream({
                 )}
               </div>
             )}
-            {turn.requestId && historyWarnings[turn.requestId]?.map((warning, index) => (
-              <div key={`${index}-${warning}`} className={styles.warningLine} role="status">
-                {warning}
-              </div>
-            ))}
+            {turn.requestId && retiredTurns[turn.requestId] && (
+              <>
+                <Warnings warnings={retiredTurns[turn.requestId]!.warnings} />
+                <Todos todos={retiredTurns[turn.requestId]!.todos} />
+              </>
+            )}
             {turn.state === "interrupted" && (
               <div className={styles.agentStatusLine}>{INTERRUPTED_TURN_MESSAGE}</div>
             )}

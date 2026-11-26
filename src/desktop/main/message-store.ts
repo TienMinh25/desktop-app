@@ -32,7 +32,8 @@ export function listSessionHistory(db: Db, sessionId: string): SessionHistoryTur
   for (let index = 0; index < rows.length; index += 1) {
     const current = rows[index]!
     const next = rows[index + 1]
-    if (current.role === "user" && next?.role === "assistant" && next.seq === current.seq + 1) {
+    // Same pairing as the harness replay (sqlite-turn-store rowsToHistoryTurns): a user row and the next assistant row
+    if (current.role === "user" && next?.role === "assistant") {
       turns.push(buildTurn(current, next))
       index += 1
     } else {
@@ -53,20 +54,12 @@ function buildTurn(first: MessageRow, next: MessageRow | null): SessionHistoryTu
     updatedAt: (assistant ?? first).updated_at,
   }
 
-  // Decode each row alone so a corrupt answer still shows its prompt
-  const userParts = user ? tryDecode(user.parts_json) : []
-  const assistantParts = assistant ? tryDecode(assistant.parts_json) : []
-  if (!userParts || !assistantParts) {
-    return {
-      ...identity,
-      state: "failed",
-      prompt: userParts ? extractUserText(userParts) : "",
-      assistantText: "",
-      toolCalls: [],
-      media: [],
-      errorMessage: UNREADABLE_TURN_ERROR,
-    }
-  }
+  // Decode each row alone so the readable side of a turn still shows
+  const decodedUser = user ? tryDecode(user.parts_json) : []
+  const decodedAssistant = assistant ? tryDecode(assistant.parts_json) : []
+  const unreadable = !decodedUser || !decodedAssistant
+  const userParts = decodedUser ?? []
+  const assistantParts = decodedAssistant ?? []
 
   const textChunks: string[] = []
   const toolCalls: SessionHistoryToolCall[] = []
@@ -93,12 +86,12 @@ function buildTurn(first: MessageRow, next: MessageRow | null): SessionHistoryTu
 
   return {
     ...identity,
-    state: assistant?.state ?? null,
+    state: unreadable ? "failed" : assistant?.state ?? null,
     prompt: extractUserText(userParts),
     assistantText: textChunks.join(""),
     toolCalls,
     media,
-    errorMessage: assistant?.error_message ?? null,
+    errorMessage: unreadable ? UNREADABLE_TURN_ERROR : assistant?.error_message ?? null,
   }
 }
 

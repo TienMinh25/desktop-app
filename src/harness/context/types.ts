@@ -1,11 +1,13 @@
 import type { ResponseInputItem, ResponsesRequest } from "../../domain/chat/types"
 
-export type TurnState = "running" | "completed" | "failed" | "interrupted"
+// The persisted turn state is declared once in contracts
+import type { SessionHistoryTurnState as TurnRowState } from "../../contracts/session-history"
+export type { TurnRowState }
 
 export interface HistoryTurn {
   userSeq: number
   assistantSeq: number
-  state: TurnState
+  state: TurnRowState
   items: ResponseInputItem[]
 }
 

@@ -17,6 +17,7 @@ export {
   INTERRUPTED_TURN_MESSAGE,
   resolveHistoryTurns,
   type TurnState,
+  type RetiredTurnExtras,
 } from "./workspace/chat.store"
 export { useCustomizeStore, type CustomizeTab } from "./workspace/customize.store"
 export {

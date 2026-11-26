@@ -341,3 +341,21 @@ it("rejects a repeated call ID from a later round before a second execution", as
   expect(executions).toBe(1)
   expect(persisted).toHaveLength(2)
 })
+
+it("rejects local-only item types from the model before persisting", async () => {
+  const ref = { type: "ccodex_media_ref", kind: "file", name: "x.pdf", mime: "application/pdf", bytes: 5, turnRead: true, path: "/etc/x.pdf" }
+  const cases = [
+    { type: "function_call_output", call_id: "c1", output: [ref] },
+    ref,
+    { type: "message", role: "assistant", content: [ref] },
+  ]
+  for (const item of cases) {
+    const registry = new ToolRegistry()
+    const persisted: ResponseInputItem[][] = []
+    await expect(new AgentLoop(registry).run(
+      modelFor([[{ type: "response.output-items", items: [item] } as never, { type: "stream.finished" }]]),
+      { buildRequest: requestBuilder(registry), persistBatch: async (items) => { persisted.push([...items]) }, context, onTextDelta() {} },
+    )).rejects.toThrow("local-only item type")
+    expect(persisted).toEqual([])
+  }
+})

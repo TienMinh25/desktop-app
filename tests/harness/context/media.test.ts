@@ -265,3 +265,17 @@ it("refuses to store a document against a relative path", () => {
     type: "input_file", filename: "a.pdf", file_data: "data:application/pdf;base64,YWJj",
   }], { path: "a.pdf" })).toThrow("absolute path")
 })
+
+it("describes old media as text without reading it when the model has no media input", async () => {
+  const stored = toStoredMedia(makeImageContent(Buffer.from("png")), { path: "/tmp/a.png" })
+  let reads = 0
+  const hydrated = await hydrateMedia(stored.parts, {
+    currentTurn: false,
+    mediaInput: false,
+    loadBlob: () => { reads += 1; return Buffer.from("png") },
+    readFileBase64: () => { reads += 1; return "cG5n" },
+  })
+  expect(reads).toBe(0)
+  expect(hydrated.some((part) => part.type === "input_image")).toBe(false)
+  expect(hydrated.at(-1)).toMatchObject({ type: "input_text", text: expect.stringContaining("does not accept media") })
+})

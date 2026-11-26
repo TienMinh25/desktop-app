@@ -10,7 +10,6 @@ const PROJECT_ACTIONS = {
   CREATE_CHAT: "projects/createChat",
   SELECT_PROJECT: "projects/selectProject",
   SELECT_SESSION: "projects/selectSession",
-  SET_SESSION_HISTORY: "projects/setSessionHasHistory",
   TOGGLE_EXPAND: "projects/toggleExpand",
   RENAME_SESSION: "projects/renameSession",
   DELETE_SESSION: "projects/deleteSession",
@@ -36,7 +35,7 @@ function toChatSession(row: SessionRow): ChatSession {
     id: row.id,
     projectId: row.projectId,
     title: row.title,
-    hasHistory: Boolean(useChatStore.getState().history[row.id]?.length),
+    hasHistory: false,
     updatedAt: row.updatedAt,
   }
 }
@@ -79,21 +78,6 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
   const syncSessionHistory = (sessionId: string | null) => {
     void useChatStore.getState().loadHistory(sessionId)
   }
-
-  useChatStore.subscribe(({ history }, previous) => {
-    if (history === previous.history) return
-    set(
-      (state) => {
-        const sessions = state.sessions.map((session) => {
-          const hasHistory = Boolean(history[session.id]?.length)
-          return session.hasHistory === hasHistory ? session : { ...session, hasHistory }
-        })
-        return sessions.every((session, index) => session === state.sessions[index]) ? state : { sessions }
-      },
-      false,
-      PROJECT_ACTIONS.SET_SESSION_HISTORY,
-    )
-  })
 
   return {
     ...INITIAL_PROJECT_STATE,
@@ -269,12 +253,17 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
         return false
       }
 
-      const { activeSessionId, selectedProjectId, sessions } = get()
-      const remainingSessions = sessions.filter((s) => s.id !== sessionId)
-      const nextActiveSessionId = sessionId === activeSessionId
-        ? (remainingSessions.filter((s) => s.projectId === selectedProjectId).sort(newestFirst)[0]?.id ?? null)
-        : activeSessionId
-      set({ sessions: remainingSessions, activeSessionId: nextActiveSessionId }, false, PROJECT_ACTIONS.DELETE_SESSION)
+      const { activeSessionId, selectedProjectId } = get()
+      set((state) => {
+        const remainingSessions = state.sessions.filter((s) => s.id !== sessionId)
+        return {
+          sessions: remainingSessions,
+          activeSessionId: sessionId === state.activeSessionId
+            ? (remainingSessions.filter((s) => s.projectId === state.selectedProjectId).sort(newestFirst)[0]?.id ?? null)
+            : state.activeSessionId,
+        }
+      }, false, PROJECT_ACTIONS.DELETE_SESSION)
+      const nextActiveSessionId = get().activeSessionId
 
       if (activeSessionId !== nextActiveSessionId) {
         syncSessionHistory(nextActiveSessionId)

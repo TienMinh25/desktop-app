@@ -9,6 +9,7 @@ export const INTERRUPTED_TURN_MESSAGE = "This turn was interrupted."
 
 const CHAT_ACTIONS = {
   HISTORY_LOADED: "chat/historyLoaded",
+  HISTORY_FAILED: "chat/historyFailed",
   PERMISSION_RESPONSE: "chat/permissionResponse",
   QUESTION_RESPONSE: "chat/questionResponse",
   CLEAR_SESSION: "chat/clearSession",
@@ -28,6 +29,8 @@ export interface TurnState {
   todos: TodoItem[]
   toolStatus: string | null
 }
+
+export type RetiredTurnExtras = Pick<TurnState, "warnings" | "todos">
 
 function updateMatchingTurn(
   turns: Record<string, TurnState>,
@@ -59,8 +62,10 @@ interface ChatStoreState {
   history: Record<string, SessionHistoryTurn[]>
   turns: Record<string, TurnState>
   pendingHistoryTurns: Record<string, TurnState[]>
-  // context.warning is not stored in the DB, so a retired live turn leaves its warnings here by requestId
-  historyWarnings: Record<string, string[]>
+  // Warnings and todos are not stored in the DB, so a turn retired into history keeps them here by session and request
+  retiredTurns: Record<string, Record<string, RetiredTurnExtras>>
+  // Sessions whose first history load failed, so the page can offer a retry instead of an empty chat
+  historyFailed: Record<string, true>
   queuedPrompts: Record<string, Array<{ requestId: string; prompt: string }>>
 
   loadHistory: (sessionId: string | null) => Promise<SessionHistoryTurn[] | null>
@@ -109,40 +114,46 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
     const token = Symbol()
     loadTokens.set(sessionId, token)
     let loaded: SessionHistoryTurn[]
+    const isCurrent = () => selectionVersion === selectedAtStart && loadTokens.get(sessionId) === token
     try {
       loaded = await window.desktop.listSessionHistory(sessionId)
     } catch {
+      // A refresh failure keeps the cached history, only a first load is marked failed
+      if (isCurrent() && get().history[sessionId] === undefined) {
+        set((state) => ({ historyFailed: { ...state.historyFailed, [sessionId]: true } }), false, CHAT_ACTIONS.HISTORY_FAILED)
+      }
       return null
     }
-    if (selectionVersion !== selectedAtStart || loadTokens.get(sessionId) !== token) {
-      return null
-    }
+    if (!isCurrent()) return null
 
-    const state = get()
-    const saved = new Set(
-      loaded.filter((turn) => turn.state && turn.state !== "running").map((turn) => turn.requestId),
-    )
-    const pending = state.pendingHistoryTurns[sessionId] ?? []
-    const remaining = pending.filter((turn) => !saved.has(turn.requestId))
-    const live = state.turns[sessionId]
-    const retireLive = live && !live.isStreaming && saved.has(live.requestId)
-    const update: Partial<ChatStoreState> = { history: { ...state.history, [sessionId]: loaded } }
-    const retired = [...pending.filter((turn) => saved.has(turn.requestId)), ...(retireLive ? [live] : [])]
-      .filter((turn) => turn.warnings.length > 0)
-    if (retired.length) {
-      update.historyWarnings = { ...state.historyWarnings }
-      for (const turn of retired) update.historyWarnings[turn.requestId] = turn.warnings
-    }
-    if (retireLive) {
-      update.turns = { ...state.turns }
-      delete update.turns[sessionId]
-    }
-    if (remaining.length < pending.length) {
-      update.pendingHistoryTurns = { ...state.pendingHistoryTurns }
-      if (remaining.length) update.pendingHistoryTurns[sessionId] = remaining
-      else delete update.pendingHistoryTurns[sessionId]
-    }
-    set(update, false, CHAT_ACTIONS.HISTORY_LOADED)
+    set((state) => {
+      const saved = new Set(
+        loaded.filter((turn) => turn.state && turn.state !== "running").map((turn) => turn.requestId),
+      )
+      const pending = state.pendingHistoryTurns[sessionId] ?? []
+      const remaining = pending.filter((turn) => !saved.has(turn.requestId))
+      const live = state.turns[sessionId]
+      const retireLive = live && !live.isStreaming && saved.has(live.requestId)
+      const { [sessionId]: _failed, ...historyFailed } = state.historyFailed
+      const update: Partial<ChatStoreState> = { history: { ...state.history, [sessionId]: loaded }, historyFailed }
+      const retired = [...pending.filter((turn) => saved.has(turn.requestId)), ...(retireLive ? [live] : [])]
+        .filter((turn) => turn.warnings.length > 0 || turn.todos.length > 0)
+      if (retired.length) {
+        const extras = { ...state.retiredTurns[sessionId] }
+        for (const turn of retired) extras[turn.requestId] = { warnings: turn.warnings, todos: turn.todos }
+        update.retiredTurns = { ...state.retiredTurns, [sessionId]: extras }
+      }
+      if (retireLive) {
+        update.turns = { ...state.turns }
+        delete update.turns[sessionId]
+      }
+      if (remaining.length < pending.length) {
+        update.pendingHistoryTurns = { ...state.pendingHistoryTurns }
+        if (remaining.length) update.pendingHistoryTurns[sessionId] = remaining
+        else delete update.pendingHistoryTurns[sessionId]
+      }
+      return update
+    }, false, CHAT_ACTIONS.HISTORY_LOADED)
     return loaded
   }
 
@@ -403,7 +414,8 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
 
   return {
     history: {},
-    historyWarnings: {},
+    retiredTurns: {},
+    historyFailed: {},
     turns: {},
     pendingHistoryTurns: {},
     queuedPrompts: {},
@@ -475,11 +487,13 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
           const nextTurns = { ...state.turns }
           const nextPending = { ...state.pendingHistoryTurns }
           const nextQueue = { ...state.queuedPrompts }
+          const { [sessionId]: _retired, ...retiredTurns } = state.retiredTurns
+          const { [sessionId]: _failed, ...historyFailed } = state.historyFailed
           delete nextHistory[sessionId]
           delete nextTurns[sessionId]
           delete nextPending[sessionId]
           delete nextQueue[sessionId]
-          return { history: nextHistory, turns: nextTurns, pendingHistoryTurns: nextPending, queuedPrompts: nextQueue }
+          return { history: nextHistory, retiredTurns, historyFailed, turns: nextTurns, pendingHistoryTurns: nextPending, queuedPrompts: nextQueue }
         },
         false,
         CHAT_ACTIONS.CLEAR_SESSION,
@@ -491,7 +505,7 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
       selectionVersion += 1
       loadTokens.clear()
       deletedSessions.clear()
-      set({ history: {}, historyWarnings: {}, turns: {}, pendingHistoryTurns: {}, queuedPrompts: {} }, false, CHAT_ACTIONS.RESET)
+      set({ history: {}, retiredTurns: {}, historyFailed: {}, turns: {}, pendingHistoryTurns: {}, queuedPrompts: {} }, false, CHAT_ACTIONS.RESET)
     },
   }
 })

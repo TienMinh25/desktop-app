@@ -35,6 +35,8 @@ export interface HydrateMediaOptions {
   loadBlob(sha256: string): Promise<Uint8Array | null | undefined> | Uint8Array | null | undefined
   readFileBase64(path: string, maxBytes: number): Promise<string | null | undefined> | string | null | undefined
   currentTurn: boolean
+  // false for a model without media input, so old media is described instead of sent
+  mediaInput?: boolean
 }
 
 export interface MediaBoundLimits {
@@ -98,6 +100,11 @@ export async function hydrateMedia(
         type: "input_text",
         text: `File ${part.name} (${part.mime}) at ${part.path} was read in an earlier turn. Call read again if you need its content.`,
       })
+      continue
+    }
+
+    if (options.mediaInput === false) {
+      hydrated.push({ type: "input_text", text: `${part.name} (${part.mime}) from an earlier turn is not shown because this model does not accept media.` })
       continue
     }
 

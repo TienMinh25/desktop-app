@@ -85,22 +85,6 @@ export class InMemoryTurnStore implements TurnStore {
     stored.errorMessage = errorMessage
   }
 
-  pruneOrphanBlobs(): number {
-    const referenced = new Set<string>()
-    for (const turns of this.turnsBySession.values()) {
-      for (const turn of turns) {
-        for (const artifact of turn.artifacts) {
-          if (artifact.sha256) referenced.add(artifact.sha256)
-        }
-      }
-    }
-    const before = this.blobs.size
-    for (const sha256 of this.blobs.keys()) {
-      if (!referenced.has(sha256)) this.blobs.delete(sha256)
-    }
-    return before - this.blobs.size
-  }
-
   loadBlob(sha256: string): Buffer | null {
     const data = this.blobs.get(sha256)
     return data ? Buffer.from(data) : null

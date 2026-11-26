@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { ProjectRow, SessionRow, SidebarSearchResult } from "../../contracts/projects"
-import { pruneOrphanBlobs, type Db } from "../../infrastructure/db/sqlite"
+import type { Db } from "../../infrastructure/db/sqlite"
 
 // Backend list is the source of truth for assignment and order, missing projects get is_assigned = 0
 // Call only with a successful response, an empty list unassigns every project
@@ -80,4 +80,13 @@ export function searchSidebar(db: Db, query: string): SidebarSearchResult {
     SELECT s.id FROM sessions AS s JOIN projects AS p ON p.id = s.project_id
     WHERE p.is_assigned = 1 AND instr(lower(s.title), lower(?)) > 0`).all(query) as Array<{ id: string }>
   return { projectIds: projectIds.map((row) => row.id), sessionIds: sessionIds.map((row) => row.id) }
+}
+
+// Session delete cascades to artifacts, so blobs no artifact references any more are removed in the same transaction
+function pruneOrphanBlobs(db: Db): number {
+  return db.prepare(`
+    DELETE FROM media_blob
+    WHERE NOT EXISTS (
+      SELECT 1 FROM artifacts WHERE artifacts.sha256 = media_blob.sha256
+    )`).run().changes
 }

@@ -84,7 +84,7 @@ test("the path button opens its exact path and shows why it could not, until a s
   }
 })
 
-test("a history turn shows its kept warnings and spoken tool status", () => {
+test("a history turn shows its kept warnings, todos and spoken tool status", () => {
   const turn: SessionHistoryTurn = {
     requestId: "w1", userSeq: 1, assistantSeq: 2, state: "completed", workspacePath: null,
     prompt: "Prompt", assistantText: "Answer", errorMessage: null, updatedAt: 1,
@@ -92,12 +92,13 @@ test("a history turn shows its kept warnings and spoken tool status", () => {
   }
   const html = renderToStaticMarkup(<ConversationStream
     historyTurns={[turn]}
-    historyWarnings={{ w1: ["AGENTS.md truncated"] }}
+    retiredTurns={{ w1: { warnings: ["AGENTS.md truncated"], todos: [{ id: "t1", content: "Write test", status: "completed" }] } }}
     pendingPrompts={[]}
     onPermissionDecision={() => {}}
     onQuestionAnswer={() => {}}
   />)
   expect(html).toContain('role="status">AGENTS.md truncated')
+  expect(html).toContain("✓ Write test")
   expect(html).toContain('<span aria-hidden="true">✕</span>')
   expect(html).toContain(", failed")
 })

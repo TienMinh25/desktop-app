@@ -22,7 +22,9 @@ export function WorkspacePage() {
   const turn = useChatStore((state) => activeSessionId === null ? undefined : state.turns[activeSessionId])
   const queue = useChatStore((state) => activeSessionId === null ? undefined : state.queuedPrompts[activeSessionId])
   const history = useChatStore((state) => activeSessionId === null ? undefined : state.history[activeSessionId])
-  const historyWarnings = useChatStore((state) => state.historyWarnings)
+  const retiredTurns = useChatStore((state) => activeSessionId === null ? undefined : state.retiredTurns[activeSessionId])
+  const historyFailed = useChatStore((state) => activeSessionId !== null && Boolean(state.historyFailed[activeSessionId]))
+  const loadHistory = useChatStore((state) => state.loadHistory)
   const pendingTurns = useChatStore((state) => activeSessionId === null ? undefined : state.pendingHistoryTurns[activeSessionId])
   const subscribeHarness = useChatStore((state) => state.subscribeHarness)
   const respondToPermission = useChatStore((state) => state.respondToPermission)
@@ -64,7 +66,7 @@ export function WorkspacePage() {
               <ConversationStream
                 key={activeSessionId ?? undefined}
                 historyTurns={visibleHistory}
-                historyWarnings={historyWarnings}
+                retiredTurns={retiredTurns}
                 pendingHistoryTurns={pendingTurns}
                 liveTurn={turn}
                 pendingPrompts={activeQueue}
@@ -76,6 +78,11 @@ export function WorkspacePage() {
                 }}
               />
             </>
+          ) : historyFailed ? (
+            <div className={styles.centerGreeting} role="alert">
+              <p>Could not load this chat.</p>
+              <button type="button" onClick={() => void loadHistory(activeSessionId)}>Retry</button>
+            </div>
           ) : activeSessionId !== null && history === undefined ? null : (
             // Wait for the history load so an old session does not flash the greeting
             <div className={styles.centerGreeting}>

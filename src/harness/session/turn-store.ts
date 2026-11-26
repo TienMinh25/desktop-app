@@ -1,7 +1,7 @@
 import { decodeParts, isMediaRefPart, type StoredMessagePart } from "../../contracts/message-parts"
 import type { ResponseInputItem } from "../../domain/chat/types"
 import type { MediaBlob } from "../context/media"
-import type { HistoryTurn, TurnState } from "../context/types"
+import type { HistoryTurn, TurnRowState } from "../context/types"
 
 const MAX_ERROR_MESSAGE_CHARS = 500
 
@@ -13,7 +13,7 @@ export interface TurnHandle {
   readonly assistantSeq: number
   readonly clientRequestId: string
   readonly workspacePath: string
-  readonly state: TurnState
+  readonly state: TurnRowState
 }
 
 export interface BeginTurnInput {
@@ -55,7 +55,6 @@ export interface TurnStore {
   beginTurn(input: BeginTurnInput): BeginTurnResult
   appendSteps(turn: TurnHandle, items: readonly StoredMessagePart[], blobs?: readonly MediaBlob[]): void
   finishTurn(turn: TurnHandle, input: FinishTurnInput): void
-  pruneOrphanBlobs(): number
   loadBlob(sha256: string): Buffer | null
 }
 

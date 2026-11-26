@@ -313,7 +313,7 @@ it("emits context.warning after chat.started when AGENTS.md triggers a warning",
   }
 })
 
-it("calls finishTurn exactly once and emits chat.failed (never chat.completed) when finishTurn throws", async () => {
+it("tries a failed finish after the completed write throws and emits chat.failed, never chat.completed", async () => {
   const backing = new InMemoryTurnStore()
   let finishCalls = 0
   const store: TurnStore = {
@@ -324,7 +324,6 @@ it("calls finishTurn exactly once and emits chat.failed (never chat.completed) w
       finishCalls += 1
       throw new Error("sqlite write failed")
     },
-    pruneOrphanBlobs: () => backing.pruneOrphanBlobs(),
     loadBlob: (sha) => backing.loadBlob(sha),
   }
   const events: HarnessEvent[] = []
@@ -345,9 +344,52 @@ it("calls finishTurn exactly once and emits chat.failed (never chat.completed) w
   runtime.submit({ type: "chat.submit", requestId: "req-finish-err", sessionId: "s-finish", prompt: "hi", model: "test", approvalMode: "manual" })
   await settled
 
-  expect(finishCalls).toBe(1)
+  expect(finishCalls).toBe(2)
   expect(events.some((event) => event.type === "chat.completed")).toBe(false)
   expect(events.at(-1)).toMatchObject({ type: "chat.failed", message: "sqlite write failed" })
+})
+
+it("a rolled back completed write leaves the session usable for the next prompt", async () => {
+  const backing = new InMemoryTurnStore()
+  let failNextComplete = true
+  const store: TurnStore = {
+    recoverInterrupted: () => backing.recoverInterrupted(),
+    beginTurn: (input) => backing.beginTurn(input),
+    appendSteps: (turn, items, blobs) => backing.appendSteps(turn, items, blobs),
+    finishTurn(turn: TurnHandle, input: FinishTurnInput) {
+      if (input.state === "completed" && failNextComplete) {
+        failNextComplete = false
+        throw new Error("sqlite write failed")
+      }
+      backing.finishTurn(turn, input)
+    },
+    loadBlob: (sha) => backing.loadBlob(sha),
+  }
+  const events: HarnessEvent[] = []
+  let finishedCount = 0
+  let done!: () => void
+  const settled = new Promise<void>((resolve) => { done = resolve })
+  const runtime = new HarnessRuntime({
+    turns: store,
+    tools: new ToolRegistry(),
+    permissions: new PermissionManager(() => {}),
+    createChatModel: () => ({ async *stream() { yield assistantOutput("answer"); yield { type: "stream.finished" } } }),
+    createExecutionEnvironment: (path) => new TrackingEnvironment(path),
+    emit(event) {
+      events.push(event)
+      if (event.type === "chat.completed" || event.type === "chat.failed") {
+        finishedCount += 1
+        if (finishedCount === 2) done()
+      }
+    },
+  })
+
+  runtime.submit({ type: "chat.submit", requestId: "r1", sessionId: "s-retry", prompt: "hi", model: "test", approvalMode: "manual" })
+  runtime.submit({ type: "chat.submit", requestId: "r2", sessionId: "s-retry", prompt: "again", model: "test", approvalMode: "manual" })
+  await settled
+
+  expect(events.filter((event) => event.type === "chat.failed" || event.type === "chat.completed").map((event) => [event.type, event.requestId]))
+    .toEqual([["chat.failed", "r1"], ["chat.completed", "r2"]])
 })
 
 it("emits chat.failed and never chat.completed when appendSteps fails", async () => {
@@ -363,7 +405,6 @@ it("emits chat.failed and never chat.completed when appendSteps fails", async ()
       finishState = input.state
       backing.finishTurn(turn, input)
     },
-    pruneOrphanBlobs: () => backing.pruneOrphanBlobs(),
     loadBlob: (sha) => backing.loadBlob(sha),
   }
   const tools = new ToolRegistry()
@@ -491,7 +532,6 @@ it("stores read media as blob for small images and path reference for PDFs", asy
       },
       appendSteps: (turn, items, blobs) => store.appendSteps(turn, items, blobs),
       finishTurn: (turn, input) => store.finishTurn(turn, input),
-      pruneOrphanBlobs: () => store.pruneOrphanBlobs(),
       loadBlob: (sha) => store.loadBlob(sha),
     }
 

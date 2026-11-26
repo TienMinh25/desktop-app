@@ -27,14 +27,6 @@ export function configureConnection(db: Db, options: ConnectionOptions = {}): vo
   db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = ${synchronous}; PRAGMA foreign_keys = ON;`)
 }
 
-export function pruneOrphanBlobs(db: Db): number {
-  return db.prepare(`
-    DELETE FROM media_blob
-    WHERE NOT EXISTS (
-      SELECT 1 FROM artifacts WHERE artifacts.sha256 = media_blob.sha256
-    )`).run().changes
-}
-
 // Only main calls this, once at startup before the harness opens the DB
 // user_version is a number stored in the SQLite file header: 0 = new file, N = schema version N
 // Each migration and its user_version bump commit together, so a crash never leaves a half applied version

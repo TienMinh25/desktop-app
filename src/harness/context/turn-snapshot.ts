@@ -22,6 +22,7 @@ export interface LoadTurnSnapshotInput {
   environment: AgentsMdEnvironment
   loadBlob: HydrateMediaOptions["loadBlob"]
   readFileBase64: HydrateMediaOptions["readFileBase64"]
+  mediaInput?: boolean
   now?: Date
   platform?: string
 }
@@ -71,6 +72,7 @@ export async function loadTurnSnapshot(input: LoadTurnSnapshotInput): Promise<Lo
     currentTurn: false,
     loadBlob: input.loadBlob,
     readFileBase64: input.readFileBase64,
+    mediaInput: input.mediaInput,
   })
   let offset = 0
   for (const group of contentGroups) {

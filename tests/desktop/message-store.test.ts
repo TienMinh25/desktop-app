@@ -266,21 +266,22 @@ test("listSessionHistory decodes legacy v1 rows with null state and requestId", 
   ])
 })
 
-test("listSessionHistory keeps unpaired messages in order without crossing a gap in sequence numbers", () => {
+test("listSessionHistory pairs a user row with the next assistant row like the harness replay, even across a seq gap", () => {
   const db = memoryDb()
   seedSession(db)
   const insert = db.prepare(`
     INSERT INTO messages (session_id, seq, role, parts_json, updated_at, workspace_path)
     VALUES ('s1', ?, ?, ?, ?, ?)`)
-  insert.run(2, "user", encodeParts([{ type: "text", text: "Orphaned prompt" }]), 10, "/first")
-  insert.run(4, "assistant", encodeParts([{ type: "text", text: "Orphaned answer" }]), 20, "/second")
+  insert.run(1, "assistant", encodeParts([{ type: "text", text: "Orphaned answer" }]), 5, null)
+  insert.run(2, "user", encodeParts([{ type: "text", text: "Legacy prompt" }]), 10, "/first")
+  insert.run(4, "assistant", encodeParts([{ type: "text", text: "Legacy answer" }]), 20, "/second")
   insert.run(5, "user", encodeParts([{ type: "text", text: "Paired prompt" }]), 30, null)
   insert.run(6, "assistant", encodeParts([{ type: "text", text: "Paired answer" }]), 40, null)
   insert.run(7, "user", encodeParts([{ type: "text", text: "Last prompt" }]), 50, null)
 
   expect(listSessionHistory(db, "s1")).toMatchObject([
-    { userSeq: 2, assistantSeq: null, state: null, prompt: "Orphaned prompt", assistantText: "", updatedAt: 10, errorMessage: null },
-    { userSeq: null, assistantSeq: 4, state: null, prompt: "", assistantText: "Orphaned answer", updatedAt: 20, errorMessage: null },
+    { userSeq: null, assistantSeq: 1, state: null, prompt: "", assistantText: "Orphaned answer", updatedAt: 5, errorMessage: null },
+    { userSeq: 2, assistantSeq: 4, state: null, prompt: "Legacy prompt", assistantText: "Legacy answer", workspacePath: "/second", updatedAt: 20 },
     { userSeq: 5, assistantSeq: 6, state: null, prompt: "Paired prompt", assistantText: "Paired answer", updatedAt: 40 },
     { userSeq: 7, assistantSeq: null, state: null, prompt: "Last prompt", assistantText: "", updatedAt: 50, errorMessage: null },
   ])
@@ -484,4 +485,18 @@ test("openAllowedMediaPath opens only supported regular media at absolute paths 
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test("listSessionHistory keeps a readable answer when only the prompt row is corrupt", () => {
+  const db = memoryDb()
+  seedSession(db)
+  const insert = db.prepare(`
+    INSERT INTO messages (session_id, seq, role, parts_json, updated_at)
+    VALUES ('s1', ?, ?, ?, ?)`)
+  insert.run(1, "user", JSON.stringify({ v: 1, parts: [{ type: "function_call", call_id: 123 }] }), 10)
+  insert.run(2, "assistant", encodeParts([{ type: "text", text: "Saved answer" }]), 20)
+
+  expect(listSessionHistory(db, "s1")).toMatchObject([
+    { userSeq: 1, assistantSeq: 2, state: "failed", prompt: "", assistantText: "Saved answer", errorMessage: "This turn could not be read." },
+  ])
 })
