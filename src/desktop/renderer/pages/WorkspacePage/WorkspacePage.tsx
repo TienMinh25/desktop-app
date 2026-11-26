@@ -38,16 +38,12 @@ export function WorkspacePage() {
   const history = useChatStore((state) => activeSessionId === null ? undefined : state.history[activeSessionId])
   const retiredTurns = useChatStore((state) => activeSessionId === null ? undefined : state.retiredTurns[activeSessionId])
   const historyFailed = useChatStore((state) => activeSessionId !== null && Boolean(state.historyFailed[activeSessionId]))
-  const loadHistory = useChatStore((state) => state.loadHistory)
   const pendingTurns = useChatStore((state) => activeSessionId === null ? undefined : state.pendingHistoryTurns[activeSessionId])
-  const subscribeHarness = useChatStore((state) => state.subscribeHarness)
-  const respondToPermission = useChatStore((state) => state.respondToPermission)
-  const respondToQuestion = useChatStore((state) => state.respondToQuestion)
+  const { loadHistory, subscribeHarness, respondToPermission, respondToQuestion } = useChatStore((state) => state.actions)
 
   const isCustomizeOpen = useCustomizeStore((state) => state.isOpen)
   const hasEnabledLspServer = useCustomizeStore((state) => state.hasEnabledLspServer)
-  const openCustomize = useCustomizeStore((state) => state.openCustomize)
-  const refreshLspStatus = useCustomizeStore((state) => state.refreshLspStatus)
+  const { openCustomize, refreshLspStatus } = useCustomizeStore((state) => state.actions)
 
   const activeSession = sessions.find(
     (s) => s.id === activeSessionId && s.projectId === selectedProjectId,
@@ -63,10 +59,9 @@ export function WorkspacePage() {
     void refreshLspStatus()
   }, [refreshLspStatus])
 
-  const activeQueue = queue ?? []
   const visibleHistory = resolveHistoryTurns(history ?? [], turn, pendingTurns)
   const pane = chatPaneView({
-    hasContent: Boolean(turn) || activeQueue.length > 0 || Boolean(pendingTurns?.length) || visibleHistory.length > 0,
+    hasContent: Boolean(turn) || Boolean(queue?.length) || Boolean(pendingTurns?.length) || visibleHistory.length > 0,
     activeSessionId,
     historyLoaded: history !== undefined,
     historyFailed,
@@ -89,7 +84,6 @@ export function WorkspacePage() {
                 retiredTurns={retiredTurns}
                 pendingHistoryTurns={pendingTurns}
                 liveTurn={turn}
-                pendingPrompts={activeQueue}
                 onPermissionDecision={(id, decision) => {
                   if (turn) respondToPermission(turn.sessionId, turn.requestId, id, decision)
                 }}

@@ -2,13 +2,12 @@ import type { ProjectsListResult, SessionRow } from "../../../../contracts/proje
 import { formatGeneralErrorMessage } from "../../utils/error-message"
 import { toast } from "../app/toast.store"
 import { createAppStore } from "../create-store"
-import { useChatStore } from "./chat.store"
+import { QC_MOCK_SESSION_ID, useChatStore } from "./chat.store"
 
 const PROJECT_ACTIONS = {
   LOADED: "projects/loaded",
   LOAD_FAILED: "projects/loadFailed",
   CREATE_CHAT: "projects/createChat",
-  SELECT_PROJECT: "projects/selectProject",
   SELECT_SESSION: "projects/selectSession",
   TOGGLE_EXPAND: "projects/toggleExpand",
   RENAME_SESSION: "projects/renameSession",
@@ -51,14 +50,17 @@ interface ProjectStoreState {
   activeSessionId: string | null
   expandedProjects: Record<string, boolean>
 
-  initProjects: () => () => void
-  selectProject: (projectId: string) => void
-  toggleExpandProject: (projectId: string) => void
-  selectSession: (sessionId: string) => void
-  createNewChat: (projectId?: string | null) => Promise<void>
-  renameSession: (sessionId: string, title: string) => Promise<void>
-  deleteSession: (sessionId: string) => Promise<boolean>
-  reset: () => void
+  actions: {
+    initProjects: () => () => void
+    selectProject: (projectId: string) => void
+    toggleExpandProject: (projectId: string) => void
+    selectSession: (sessionId: string) => void
+    createNewChat: (projectId?: string | null) => void
+    createSessionForPrompt: (projectId: string, prompt: string) => Promise<string | null>
+    renameSession: (sessionId: string, title: string) => Promise<void>
+    deleteSession: (sessionId: string) => Promise<boolean>
+    reset: () => void
+  }
 }
 
 const INITIAL_PROJECT_STATE = {
@@ -76,15 +78,15 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
     get().assignedProjects.some((project) => project.id === projectId)
 
   const syncSessionHistory = (sessionId: string | null) => {
-    void useChatStore.getState().loadHistory(sessionId)
+    void useChatStore.getState().actions.loadHistory(sessionId === QC_MOCK_SESSION_ID ? null : sessionId)
   }
 
   return {
     ...INITIAL_PROJECT_STATE,
 
-    initProjects: () => {
+    actions: {
+      initProjects: () => {
       let cancelled = false
-      let firstChatCreated = false
 
       const apply = async ({ projects, syncedAt, error }: ProjectsListResult) => {
         if (projects.length === 0 && syncedAt === null && error === null) return
@@ -94,15 +96,20 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
         )
         if (cancelled) return
 
-        if (!firstChatCreated && active[0] && sessionLists[0]?.length === 0) {
-          firstChatCreated = true
-          sessionLists[0] = [await window.desktop.createSession(active[0].id, "New chat #1")]
-          if (cancelled) return
-        }
-
-        const sessions = sessionLists.flat().map(toChatSession)
+        const loaded = sessionLists.flat().map(toChatSession)
         const firstProjectId = active[0]?.id ?? null
-        const prevActiveSessionId = get().activeSessionId
+
+        const previousSessionId = get().activeSessionId
+        if (firstProjectId) {
+          loaded.push({
+            id: QC_MOCK_SESSION_ID,
+            projectId: firstProjectId,
+            title: "[QC Mock] Queue, Stop & Question UI",
+            hasHistory: true,
+            updatedAt: 0,
+          })
+          useChatStore.getState().actions.initQcMockSession()
+        }
 
         set(
           (state) => {
@@ -111,12 +118,10 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
                 ? state.selectedProjectId
                 : firstProjectId
 
-            const activeStillAvailable = sessions.some(
-              (s) => s.id === state.activeSessionId && s.projectId === nextSelectedProjectId,
-            )
-            const nextActiveSessionId = activeStillAvailable
-              ? state.activeSessionId
-              : (sessions.find((s) => s.projectId === nextSelectedProjectId)?.id ?? null)
+            const nextActiveSessionId =
+              state.activeSessionId && loaded.some((s) => s.id === state.activeSessionId && s.projectId === nextSelectedProjectId)
+                ? state.activeSessionId
+                : (loaded.find((s) => s.projectId === nextSelectedProjectId && s.id !== QC_MOCK_SESSION_ID)?.id ?? null)
 
             return {
               loadError: error,
@@ -124,7 +129,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
               expandedProjects: Object.fromEntries(
                 active.map((project) => [project.id, state.expandedProjects[project.id] ?? true]),
               ),
-              sessions,
+              sessions: loaded,
               selectedProjectId: nextSelectedProjectId,
               activeSessionId: nextActiveSessionId,
               isLoaded: true,
@@ -133,13 +138,10 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
           false,
           PROJECT_ACTIONS.LOADED,
         )
-        const nextActiveSessionId = get().activeSessionId
-        if (
-          nextActiveSessionId !== prevActiveSessionId ||
-          (nextActiveSessionId !== null &&
-            useChatStore.getState().history[nextActiveSessionId] === undefined)
-        ) {
-          syncSessionHistory(nextActiveSessionId)
+        const selected = get().activeSessionId
+        if (selected !== previousSessionId ||
+          (selected && selected !== QC_MOCK_SESSION_ID && useChatStore.getState().history[selected] === undefined)) {
+          syncSessionHistory(selected)
         }
       }
 
@@ -166,40 +168,51 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
       }
     },
 
-    createNewChat: async (projectId = get().selectedProjectId) => {
+    createNewChat: (projectId = get().selectedProjectId) => {
       if (!projectId || !isAssigned(projectId)) return
-      const { activeSessionId, sessions } = get()
-      const count = sessions.filter((s) => s.projectId === projectId).length
+      set(
+        { selectedProjectId: projectId, activeSessionId: null },
+        false,
+        PROJECT_ACTIONS.CREATE_CHAT,
+      )
+      syncSessionHistory(null)
+    },
+
+    createSessionForPrompt: async (projectId, prompt) => {
+      if (!projectId || !isAssigned(projectId)) return null
+      const previousSessionId = get().activeSessionId
+      const count = get().sessions.filter((s) => s.projectId === projectId && s.id !== QC_MOCK_SESSION_ID).length
+      const title = prompt.trim().replace(/\s+/g, " ").slice(0, 120) || `New chat #${count + 1}`
       try {
-        const row = await window.desktop.createSession(projectId, `New chat #${count + 1}`)
-        if (!isAssigned(projectId)) return
-        const activate = get().selectedProjectId === projectId && get().activeSessionId === activeSessionId
+        const row = await window.desktop.createSession(projectId, title)
+        if (!isAssigned(projectId)) return null
         set(
           (state) => ({
             sessions: [toChatSession(row), ...state.sessions],
-            activeSessionId: activate ? row.id : state.activeSessionId,
+            activeSessionId: state.selectedProjectId === projectId && state.activeSessionId === previousSessionId
+              ? row.id : state.activeSessionId,
           }),
           false,
           PROJECT_ACTIONS.CREATE_CHAT,
         )
-        if (activate) syncSessionHistory(row.id)
+        if (get().activeSessionId === row.id) syncSessionHistory(row.id)
+        return row.id
       } catch (cause) {
         toast.error(`Could not create chat: ${formatGeneralErrorMessage(cause)}`)
+        return null
       }
     },
 
     selectProject: (projectId) => {
       if (!isAssigned(projectId)) return
-      const newest = get()
-        .sessions.filter((s) => s.projectId === projectId)
-        .sort(newestFirst)[0]
+      const scoped = get()
+        .sessions.filter((s) => s.projectId === projectId && s.id !== QC_MOCK_SESSION_ID)
+        .sort(newestFirst)
 
-      if (newest) {
-        get().selectSession(newest.id)
+      if (scoped.length > 0 && scoped[0]) {
+        get().actions.selectSession(scoped[0].id)
       } else {
-        set({ selectedProjectId: projectId, activeSessionId: null }, false, PROJECT_ACTIONS.SELECT_PROJECT)
-        syncSessionHistory(null)
-        void get().createNewChat(projectId)
+        get().actions.createNewChat(projectId)
       }
     },
 
@@ -231,7 +244,9 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
       const newTitle = title.trim()
       if (!newTitle) return
       try {
-        await window.desktop.renameSession(sessionId, newTitle)
+        if (sessionId !== QC_MOCK_SESSION_ID) {
+          await window.desktop.renameSession(sessionId, newTitle)
+        }
         set(
           (state) => ({
             sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)),
@@ -245,36 +260,34 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
     },
 
     deleteSession: async (sessionId) => {
-      if (!window.confirm("Delete this chat session?")) return false
       try {
-        await window.desktop.deleteSession(sessionId)
+        if (sessionId !== QC_MOCK_SESSION_ID) {
+          await window.desktop.deleteSession(sessionId)
+        }
       } catch (cause) {
         toast.error(`Could not delete chat: ${formatGeneralErrorMessage(cause)}`)
         return false
       }
 
-      const { activeSessionId, selectedProjectId } = get()
+      const previousSessionId = get().activeSessionId
       set((state) => {
-        const remainingSessions = state.sessions.filter((s) => s.id !== sessionId)
+        const sessions = state.sessions.filter((s) => s.id !== sessionId)
         return {
-          sessions: remainingSessions,
-          activeSessionId: sessionId === state.activeSessionId
-            ? (remainingSessions.filter((s) => s.projectId === state.selectedProjectId).sort(newestFirst)[0]?.id ?? null)
+          sessions,
+          activeSessionId: state.activeSessionId === sessionId
+            ? (sessions.filter((s) => s.projectId === state.selectedProjectId && s.id !== QC_MOCK_SESSION_ID).sort(newestFirst)[0]?.id ?? null)
             : state.activeSessionId,
         }
       }, false, PROJECT_ACTIONS.DELETE_SESSION)
-      const nextActiveSessionId = get().activeSessionId
-
-      if (activeSessionId !== nextActiveSessionId) {
-        syncSessionHistory(nextActiveSessionId)
-        if (nextActiveSessionId === null && selectedProjectId) void get().createNewChat(selectedProjectId)
-      }
+      const selected = get().activeSessionId
+      if (selected !== previousSessionId) syncSessionHistory(selected)
       return true
     },
 
     reset: () => {
       set(INITIAL_PROJECT_STATE, false, PROJECT_ACTIONS.RESET)
       syncSessionHistory(null)
+    },
     },
   }
 })

@@ -1,8 +1,9 @@
 import { expect, it } from "bun:test"
+import type { HarnessCommand } from "../../src/contracts/commands"
 import type { HarnessEvent } from "../../src/contracts/events"
 import type { SessionRow } from "../../src/contracts/projects"
 import type { SessionHistoryTurn } from "../../src/contracts/session-history"
-import { resolveHistoryTurns, useChatStore } from "../../src/desktop/renderer/stores/workspace/chat.store"
+import { QC_MOCK_SESSION_ID, resolveHistoryTurns, useChatStore } from "../../src/desktop/renderer/stores/workspace/chat.store"
 import { useProjectStore } from "../../src/desktop/renderer/stores/workspace/project.store"
 import { useToastStore } from "../../src/desktop/renderer/stores/app/toast.store"
 
@@ -42,8 +43,8 @@ function withDesktopMock(
   return Promise.resolve()
     .then(run)
     .finally(() => {
-      useChatStore.getState().reset()
-      useProjectStore.getState().reset()
+      useChatStore.getState().actions.reset()
+      useProjectStore.getState().actions.reset()
       if (original) Object.defineProperty(globalThis, "window", original)
       else Reflect.deleteProperty(globalThis, "window")
     })
@@ -57,7 +58,7 @@ it("shows failures before start and keeps the active turn when a queued request 
     },
     () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
       const request = { sessionId: "s1", requestId: "a", prompt: "first prompt" }
       emit({ ...request, type: "chat.failed", message: "disk full" })
       expect(store().turns.s1).toMatchObject({ ...request, isStreaming: false, error: "disk full" })
@@ -101,11 +102,11 @@ it("loads session history when selecting a session", async () => {
         isLoaded: true,
       })
 
-      useProjectStore.getState().selectSession("s1")
+      useProjectStore.getState().actions.selectSession("s1")
       await flush()
       expect(useChatStore.getState().history.s1).toEqual(historyBySession.s1)
 
-      useProjectStore.getState().selectSession("s2")
+      useProjectStore.getState().actions.selectSession("s2")
       await flush()
       expect(useChatStore.getState().history.s2).toEqual([])
     },
@@ -122,8 +123,8 @@ it("drops stale history responses after a session switch or a newer load", async
     },
     async () => {
       const store = useChatStore.getState
-      const p1 = store().loadHistory("s1")
-      const p2 = store().loadHistory("s2")
+      const p1 = store().actions.loadHistory("s1")
+      const p2 = store().actions.loadHistory("s2")
 
       firstS2.resolve([makeHistoryTurn({ requestId: "r-s2", prompt: "from s2" })])
       await p2
@@ -142,8 +143,8 @@ it("drops stale history responses after a session switch or a newer load", async
         return repeat === 1 ? olderS1.promise : newerS1.promise
       }
 
-      const slowLoad = store().loadHistory("s1")
-      const fastLoad = store().loadHistory("s1")
+      const slowLoad = store().actions.loadHistory("s1")
+      const fastLoad = store().actions.loadHistory("s1")
       newerS1.resolve([makeHistoryTurn({ requestId: "r-s1-new" })])
       await fastLoad
       olderS1.resolve([makeHistoryTurn({ requestId: "r-s1-old" })])
@@ -174,18 +175,19 @@ it("keeps the reselected session when a new chat finishes creating in another pr
         ],
         sessions: [{ id: "s1", projectId: "p1", title: "Old chat", hasHistory: false, updatedAt: 1 }],
       })
-      store().selectSession("s1")
-      store().selectProject("p2")
+      store().actions.selectSession("s1")
+      store().actions.selectProject("p2")
       expect(store().activeSessionId).toBeNull()
 
+      const creating = store().actions.createSessionForPrompt("p2", "New chat")
       older.resolve([makeHistoryTurn({ requestId: "stale" })])
       await flush()
       expect(useChatStore.getState().history.s1).toBeUndefined()
 
       nextHistory = Promise.resolve([ready])
-      store().selectSession("s1")
+      store().actions.selectSession("s1")
       created.resolve({ id: "s2", projectId: "p2", title: "New chat", updatedAt: 2, lastPreview: null })
-      await flush()
+      await creating
       expect(store().activeSessionId).toBe("s1")
       expect(store().sessions.map((session) => session.id)).toEqual(["s2", "s1"])
       expect(useChatStore.getState().history.s1).toEqual([ready])
@@ -200,10 +202,10 @@ it("rejects a history response from before a reset even when the same session is
 
   await withDesktopMock({ listSessionHistory: () => next }, async () => {
     const store = useChatStore.getState
-    const oldLoad = store().loadHistory("s1")
-    store().reset()
+    const oldLoad = store().actions.loadHistory("s1")
+    store().actions.reset()
     next = current.promise
-    const newLoad = store().loadHistory("s1")
+    const newLoad = store().actions.loadHistory("s1")
 
     stale.resolve([makeHistoryTurn({ requestId: "stale" })])
     expect(await oldLoad).toBeNull()
@@ -230,7 +232,7 @@ it("refreshes a completed background turn without replacing the selected session
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
       useProjectStore.setState({
         sessions: [{ id: "s1", projectId: "p1", title: "Background chat", hasHistory: false, updatedAt: 1 }],
       })
@@ -240,7 +242,7 @@ it("refreshes a completed background turn without replacing the selected session
       emit({ ...queued, type: "chat.queued", queuePosition: 1 })
       emit({ ...first, type: "chat.completed" })
 
-      const selectedLoad = store().loadHistory("s2")
+      const selectedLoad = store().actions.loadHistory("s2")
       staleCompletion.resolve([completed])
       await flush()
       expect(store().history.s1).toBeUndefined()
@@ -280,7 +282,7 @@ it("keeps a terminal turn visible until its saved state arrives even after the n
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
 
       emit({ ...first, type: "chat.started" })
       emit({ ...first, type: "assistant.delta", text: "partial output" })
@@ -299,7 +301,7 @@ it("keeps a terminal turn visible until its saved state arrives even after the n
       expect(resolveHistoryTurns(store().history.s1 ?? [], store().turns.s1, store().pendingHistoryTurns.s1)).toEqual([])
 
       nextHistory = Promise.resolve([persisted])
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       expect(store().pendingHistoryTurns.s1).toBeUndefined()
       expect(store().history.s1).toEqual([persisted])
       expect(store().turns.s1).toMatchObject({ requestId: "r2", isStreaming: true })
@@ -318,7 +320,7 @@ it("removes the live overlay on chat.completed and chat.failed only after histor
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
 
       emit({ type: "chat.started", sessionId: "s1", requestId: "r1", prompt: "first" })
       emit({ type: "assistant.delta", sessionId: "s1", requestId: "r1", text: "partial" })
@@ -372,16 +374,16 @@ it("maps running history turns without a matching live turn to interrupted", asy
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
 
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       expect(resolveHistoryTurns(store().history.s1 ?? [], undefined).map(t => [t.requestId, t.state])).toEqual([
         ["r-old", "interrupted"],
         ["r-live", "interrupted"],
       ])
 
       emit({ type: "chat.started", sessionId: "s1", requestId: "r-live", prompt: "still running" })
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       const visible = resolveHistoryTurns(store().history.s1 ?? [], store().turns.s1)
       expect(visible.map((t) => [t.requestId, t.state])).toEqual([["r-old", "interrupted"]])
     },
@@ -397,7 +399,7 @@ it("keeps context.warning entries separate from turn errors", async () => {
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
       emit({ type: "chat.started", sessionId: "s1", requestId: "r1", prompt: "hi" })
       emit({ type: "context.warning", sessionId: "s1", requestId: "r1", message: "AGENTS.md truncated" })
       emit({ type: "context.warning", sessionId: "s1", requestId: "r1", message: "Rule file unreadable" })
@@ -427,7 +429,7 @@ it("keeps warnings and todos of a retired turn per session, even when two sessio
     },
     async () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
+      store().actions.subscribeHarness()
       emit({ type: "chat.started", sessionId: "s1", requestId: "r1", prompt: "hi" })
       emit({ type: "context.warning", sessionId: "s1", requestId: "r1", message: "AGENTS.md truncated" })
       emit({ type: "todo.updated", sessionId: "s1", requestId: "r1", scopeId: "r1", scopeType: "request", todos: [{ id: "t1", content: "Write test", status: "completed" }] })
@@ -440,7 +442,7 @@ it("keeps warnings and todos of a retired turn per session, even when two sessio
       })
       expect(store().retiredTurns.s2?.r1).toBeUndefined()
 
-      store().clearSessionRuntime("s1")
+      store().actions.clearSessionRuntime("s1")
       expect(store().retiredTurns.s1).toBeUndefined()
     },
   )
@@ -455,17 +457,17 @@ it("marks only a failed first history load, and clears it when a retry succeeds"
     },
     async () => {
       const store = useChatStore.getState
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       expect(store().historyFailed.s1).toBe(true)
       expect(store().history.s1).toBeUndefined()
 
       fail = false
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       expect(store().historyFailed.s1).toBeUndefined()
       expect(store().history.s1).toEqual([])
 
       fail = true
-      await store().loadHistory("s1")
+      await store().actions.loadHistory("s1")
       expect(store().historyFailed.s1).toBeUndefined()
       expect(store().history.s1).toEqual([])
     },
@@ -478,8 +480,8 @@ it("tells the user when a harness exit drops prompts queued behind a finished tu
     { subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} } },
     () => {
       const store = useChatStore.getState
-      store().subscribeHarness()
-      useToastStore.getState().dismissToast()
+      store().actions.subscribeHarness()
+      useToastStore.getState().actions.dismissToast()
       emit({ type: "chat.started", sessionId: "s1", requestId: "a", prompt: "first" })
       emit({ type: "chat.queued", sessionId: "s1", requestId: "b", prompt: "second", queuePosition: 1 })
       emit({ type: "chat.completed", sessionId: "s1", requestId: "a" })
@@ -488,4 +490,96 @@ it("tells the user when a harness exit drops prompts queued behind a finished tu
       expect(useToastStore.getState().activeToast).toMatchObject({ type: "error", message: "The harness stopped. 1 waiting prompt(s) were lost." })
     },
   )
+})
+
+it("drains edited renderer prompts after cancellation, completion and failure", async () => {
+  let emit!: (event: HarnessEvent) => void
+  const commands: HarnessCommand[] = []
+  const first = { sessionId: "s1", requestId: "first", prompt: "first" }
+  const saved = makeHistoryTurn({ requestId: first.requestId, state: "failed", errorMessage: "Cancelled" })
+  await withDesktopMock({
+    subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} },
+    listSessionHistory: async () => [saved],
+    sendHarnessCommand(command: HarnessCommand) { commands.push(command) },
+  }, async () => {
+    const store = useChatStore.getState
+    const actions = store().actions
+    actions.subscribeHarness()
+    useToastStore.getState().actions.dismissToast()
+    emit({ ...first, type: "chat.started" })
+    for (const prompt of ["second", "third", "fourth", "discard"]) {
+      actions.sendPrompt({ sessionId: "s1", prompt, model: "model", approvalMode: "manual" })
+    }
+    const [second, third, fourth, discard] = store().queuedPrompts.s1!
+    actions.editQueuedPrompt("s1", third!.requestId, "edited")
+    actions.deleteQueuedPrompt("s1", discard!.requestId)
+    actions.sendQueuedPromptNow("s1", third!.requestId)
+    expect(commands).toEqual([{ type: "chat.cancel", sessionId: "s1" }])
+    emit({ ...first, type: "chat.failed", message: "Cancelled" })
+    expect(commands[1]).toMatchObject({ type: "chat.submit", requestId: third!.requestId, prompt: "edited" })
+    await flush()
+    expect(store().history.s1).toEqual([saved])
+    expect(useToastStore.getState().activeToast).toBeNull()
+    emit({ ...third!, sessionId: "s1", type: "chat.started" })
+    emit({ requestId: third!.requestId, sessionId: "s1", type: "chat.completed" })
+    expect(commands[2]).toMatchObject({ type: "chat.submit", requestId: second!.requestId })
+    emit({ ...second!, sessionId: "s1", type: "chat.started" })
+    emit({ ...second!, sessionId: "s1", type: "chat.failed", message: "offline" })
+    expect(commands[3]).toMatchObject({ type: "chat.submit", requestId: fourth!.requestId })
+    expect(commands).toHaveLength(4)
+  })
+})
+
+it("keeps QC history, queue, answers and session edits in the renderer", async () => {
+  const calls: string[] = []
+  const desktop = Object.fromEntries(
+    ["listSessionHistory", "sendHarnessCommand", "respondToQuestion", "respondToPermission",
+      "createSession", "renameSession", "deleteSession"].map((name) => [name, () => { calls.push(name) }]),
+  )
+  await withDesktopMock(desktop, async () => {
+    const id = QC_MOCK_SESSION_ID
+    const actions = useChatStore.getState().actions
+    const projects = useProjectStore.getState().actions
+    useProjectStore.setState({
+      assignedProjects: [{ id: "p1", key: "P1", name: "Project 1" }],
+      sessions: [{ id, projectId: "p1", title: "QC", hasHistory: true, updatedAt: 0 }],
+    })
+    actions.initQcMockSession()
+    projects.selectSession(id)
+    await actions.loadHistory(id)
+    const mock = useChatStore.getState().turns[id]!
+    actions.respondToQuestion(id, mock.requestId, mock.question!.id, "Skip")
+    actions.respondToPermission(id, mock.requestId, "permission", "deny")
+    actions.sendPrompt({ sessionId: id, prompt: "qc", model: "model", approvalMode: "manual" })
+    const queued = useChatStore.getState().queuedPrompts[id]!.at(-1)!
+    actions.sendQueuedPromptNow(id, queued.requestId)
+    actions.stopGeneration(id)
+    await projects.renameSession(id, "renamed QC")
+    expect(useProjectStore.getState().sessions[0]?.title).toBe("renamed QC")
+    expect(await projects.deleteSession(id)).toBe(true)
+    actions.clearSessionRuntime(id)
+    expect(calls).toEqual([])
+  })
+})
+
+it("shows a harness-queued prompt that fails before starting after the previous turn ends", async () => {
+  let emit!: (event: HarnessEvent) => void
+  await withDesktopMock({
+    subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} },
+    listSessionHistory: async () => [],
+  }, async () => {
+    const store = useChatStore.getState
+    store().actions.subscribeHarness()
+    const first = { sessionId: "s1", requestId: "first", prompt: "first" }
+    const second = { sessionId: "s1", requestId: "second", prompt: "second" }
+    emit({ ...first, type: "chat.started" })
+    emit({ ...second, type: "chat.queued", queuePosition: 1 })
+    emit({ ...first, type: "chat.completed" })
+    emit({ ...second, type: "chat.failed", message: "Could not start turn." })
+    await flush()
+
+    expect(store().queuedPrompts.s1).toEqual([])
+    expect(store().turns.s1).toMatchObject({ ...second, isStreaming: false, error: "Could not start turn." })
+    expect(store().pendingHistoryTurns.s1).toMatchObject([{ ...first, isStreaming: false }])
+  })
 })

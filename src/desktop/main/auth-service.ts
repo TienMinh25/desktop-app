@@ -170,11 +170,11 @@ export class AuthService {
       }
       const isAuthError =
         response.status === 401 || apiError.code === API_RESPONSE_CODES.AUTHENTICATION_REQUIRED
-      const defaultMessage = isAuthError
+      const message = isAuthError
         ? AUTH_INVALID_CREDENTIALS_MESSAGE
-        : "Sign in failed. Please try again."
+        : (apiError.message ?? "Sign in failed. Please try again.")
       throw new AuthServiceError(
-        apiError.message ?? defaultMessage,
+        message,
         response.status,
         isAuthError ? "unauthenticated" : "request-failed",
       )

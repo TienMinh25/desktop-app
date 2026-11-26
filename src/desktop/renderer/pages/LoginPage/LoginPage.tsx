@@ -1,22 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import cmcLogoLogin from "../../assets/cmc_global_login.jpg"
-import { APP_CONFIG } from "../../constants"
+import { APP_CONFIG, AUTH_VALIDATION } from "../../constants"
 import { useAuthStore } from "../../stores"
 import { classifyAuthError } from "../../utils/error-message"
 import { TermsModal } from "./components/TermsModal"
 import styles from "./LoginPage.module.scss"
 
-const MAX_USERNAME_LENGTH = 20
-const MAX_PASSWORD_LENGTH = 50
+const { MAX_USERNAME_LENGTH, MAX_PASSWORD_LENGTH } = AUTH_VALIDATION
 
 interface LoginPageProps {
   showTermsModal?: boolean
 }
 
 export function LoginPage({ showTermsModal = false }: LoginPageProps) {
-  const loginSuccess = useAuthStore((state) => state.loginSuccess)
-  const agreeTerms = useAuthStore((state) => state.agreeTerms)
-  const disagreeTerms = useAuthStore((state) => state.disagreeTerms)
+  const { loginSuccess, agreeTerms, disagreeTerms } = useAuthStore((state) => state.actions)
   const externalError = useAuthStore((state) => state.termsDeclinedError)
   const resetCounter = useAuthStore((state) => state.loginResetCounter)
   const usernameInputRef = useRef<HTMLInputElement>(null)

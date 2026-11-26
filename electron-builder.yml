@@ -11,6 +11,8 @@ files:
   - "!scripts/*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
   - "!tsconfig*.json"
+# better-sqlite3 ships N-API prebuilds for every target; rebuilding needs Visual Studio/node-gyp
+npmRebuild: false
 asarUnpack:
   - "**/*.node"
   - "**/node_modules/@vscode/ripgrep/**"

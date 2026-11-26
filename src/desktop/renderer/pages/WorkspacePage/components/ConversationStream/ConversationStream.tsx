@@ -1,6 +1,7 @@
-import { Fragment, useState } from "react"
+import { Fragment, useId, useState } from "react"
 import type { SessionHistoryTurn } from "../../../../../../contracts/session-history"
 import type { RetiredTurnExtras, TurnState } from "../../../../stores"
+import { splitTitleAndBody } from "../../../../utils/text"
 import styles from "./ConversationStream.module.scss"
 
 interface ConversationStreamProps {
@@ -10,7 +11,6 @@ interface ConversationStreamProps {
   liveTurn?: TurnState
   onPermissionDecision: (id: string, decision: "allow" | "deny") => void
   onQuestionAnswer: (id: string, answer: string) => void
-  pendingPrompts: Array<{ requestId: string; prompt: string }>
 }
 
 interface MediaPathRowProps {
@@ -67,19 +67,98 @@ function Todos({ todos }: { todos: TurnState["todos"] }) {
   )
 }
 
-function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
-  liveTurn: TurnState
-} & Pick<ConversationStreamProps, "onPermissionDecision" | "onQuestionAnswer">) {
-  const [answer, setAnswer] = useState("")
+function QuestionCard({ question, onQuestionAnswer }: {
+  question: NonNullable<TurnState["question"]>
+  onQuestionAnswer: ConversationStreamProps["onQuestionAnswer"]
+}) {
+  const choicesId = useId()
+  const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
+  const [customAnswer, setCustomAnswer] = useState("")
+  const choices = question.choices ?? []
+  const { title, body } = splitTitleAndBody(question.prompt)
+  const questionTitle = body ? title : "Question from the agent"
+  const trimmedAnswer = customAnswer.trim()
+  const answer = selectedChoice ?? trimmedAnswer
+  const showSelectionAction = choices.length > 0 && (selectedChoice !== null || !trimmedAnswer)
 
   const submitAnswer = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const trimmed = answer.trim()
-    if (!liveTurn.question || !trimmed) return
-    onQuestionAnswer(liveTurn.question.id, trimmed)
-    setAnswer("")
+    if (answer) onQuestionAnswer(question.id, answer)
   }
 
+  return (
+    <section className={styles.questionCard} aria-live="polite">
+      <div className={styles.questionHeader}>
+        <span className={styles.questionIcon} aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.35" />
+            <path d="M8 4.6v3.6l2.2 1.4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <strong className={styles.questionTitle}>{questionTitle}</strong>
+      </div>
+      <p className={styles.questionDescription}>{body || title}</p>
+
+      <form className={styles.questionForm} onSubmit={submitAnswer}>
+        {choices.length > 0 && (
+          <fieldset className={styles.questionChoices} aria-label={questionTitle}>
+            {choices.map((choice) => {
+              const { title, body } = splitTitleAndBody(choice)
+              const isSelected = selectedChoice === choice
+              return (
+                <label key={choice} className={`${styles.questionOptionCard} ${isSelected ? styles.questionOptionSelected : ""}`}>
+                  <input
+                    className={styles.srOnly}
+                    type="radio"
+                    name={choicesId}
+                    value={choice}
+                    checked={isSelected}
+                    onChange={() => setSelectedChoice(choice)}
+                  />
+                  <span className={styles.questionRadio} aria-hidden="true">
+                    {isSelected && <span className={styles.questionRadioDot} />}
+                  </span>
+                  <span className={styles.questionOptionText}>
+                    <span className={styles.questionOptionTitle}>{title}</span>
+                    {body && <span className={styles.questionOptionBody}>{body}</span>}
+                  </span>
+                </label>
+              )
+            })}
+          </fieldset>
+        )}
+        <textarea
+          aria-label="Your answer"
+          value={customAnswer}
+          onChange={(event) => {
+            setCustomAnswer(event.target.value)
+            setSelectedChoice(null)
+          }}
+          maxLength={10_000}
+          autoFocus={choices.length === 0}
+          placeholder={choices.length ? "Type a custom answer…" : "Type your answer…"}
+        />
+        <div className={styles.questionActions}>
+          <button type="button" className={styles.questionSkipBtn} onClick={() => onQuestionAnswer(question.id, "Skipped")}>
+            Skip for now
+          </button>
+          <button type="submit" className={styles.questionContinueBtn} disabled={!answer}>
+            {showSelectionAction ? "Continue with selection" : "Send answer"}
+          </button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
+function TurnStatus({ message }: { message: string | null }) {
+  if (!message) return null
+  return <div className={styles.agentStatusLine} role={message === "Cancelled" ? "status" : undefined}>{message}</div>
+}
+
+function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
+  liveTurn: TurnState
+} & Pick<ConversationStreamProps, "onPermissionDecision" | "onQuestionAnswer">) {
   const livePermission = liveTurn.permission
   const liveQuestion = liveTurn.question
 
@@ -107,33 +186,10 @@ function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
           </section>
         )}
         {liveQuestion && (
-          <section className={styles.questionCard} aria-live="polite">
-            <strong>Question from the agent</strong>
-            <span>{liveQuestion.prompt}</span>
-            {liveQuestion.choices && (
-              <div className={styles.questionChoices}>
-                {liveQuestion.choices.map((choice) => (
-                  <button key={choice} type="button" onClick={() => setAnswer(choice)}>
-                    {choice}
-                  </button>
-                ))}
-              </div>
-            )}
-            <form className={styles.questionForm} onSubmit={submitAnswer}>
-              <textarea
-                aria-label="Your answer"
-                value={answer}
-                onChange={(event) => setAnswer(event.target.value)}
-                maxLength={10_000}
-                autoFocus
-                placeholder="Type your answer…"
-              />
-              <button type="submit" disabled={!answer.trim()}>Send answer</button>
-            </form>
-          </section>
+          <QuestionCard key={liveQuestion.id} question={liveQuestion} onQuestionAnswer={onQuestionAnswer} />
         )}
         <Todos todos={liveTurn.todos} />
-        {liveTurn.error && <div className={styles.agentStatusLine}>{liveTurn.error}</div>}
+        <TurnStatus message={liveTurn.error} />
       </div>
     </>
   )
@@ -146,7 +202,6 @@ export function ConversationStream({
   liveTurn,
   onPermissionDecision,
   onQuestionAnswer,
-  pendingPrompts,
 }: ConversationStreamProps) {
   const [pathProblems, setPathProblems] = useState<Record<string, string | null>>({})
 
@@ -216,11 +271,7 @@ export function ConversationStream({
             {turn.state === "interrupted" && (
               <div className={styles.agentStatusLine}>This turn was interrupted.</div>
             )}
-            {turn.errorMessage ? (
-              <div className={styles.agentStatusLine}>{turn.errorMessage}</div>
-            ) : turn.state === "failed" ? (
-              <div className={styles.agentStatusLine}>This turn failed.</div>
-            ) : null}
+            <TurnStatus message={turn.errorMessage || (turn.state === "failed" ? "This turn failed." : null)} />
           </div>
         </Fragment>
       ))}
@@ -232,16 +283,6 @@ export function ConversationStream({
           onQuestionAnswer={onQuestionAnswer}
         />
       ))}
-      {pendingPrompts.length > 0 && (
-        <section className={styles.todoCard} aria-label="Queued prompts">
-          <strong>Queued prompts</strong>
-          {pendingPrompts.map((item, index) => (
-            <div key={item.requestId} className={styles.todoPending}>
-              {index + 1}. {item.prompt}
-            </div>
-          ))}
-        </section>
-      )}
     </div>
   )
 }

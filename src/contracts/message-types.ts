@@ -1,6 +1,7 @@
 export const HARNESS_COMMAND_TYPES = {
   PING: "app.ping",
   CHAT_SUBMIT: "chat.submit",
+  CHAT_CANCEL: "chat.cancel",
   SESSION_DELETE: "session.delete",
   PERMISSION_RESPOND: "permission.respond",
   QUESTION_RESPOND: "question.respond",

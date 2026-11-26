@@ -7,9 +7,9 @@ interface SidebarFooterProps {
 
 export function SidebarFooter({ role = "Project Member" }: SidebarFooterProps) {
   const username = useAuthStore((state) => state.authState?.username ?? "")
-  const openSignOutConfirm = useAuthStore((state) => state.openSignOutConfirm)
+  const { openSignOutConfirm } = useAuthStore((state) => state.actions)
   const theme = useThemeStore((state) => state.theme)
-  const setTheme = useThemeStore((state) => state.setTheme)
+  const { setTheme } = useThemeStore((state) => state.actions)
 
   const initials = (username || "CU").slice(0, 2).toUpperCase()
 

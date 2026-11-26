@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import { isAbsolute, resolve } from "node:path"
-import type { DeleteSessionCommand, SubmitPromptCommand } from "../contracts/commands"
+import type { CancelChatCommand, DeleteSessionCommand, SubmitPromptCommand } from "../contracts/commands"
 import { HARNESS_EVENT_TYPES, type HarnessEvent } from "../contracts/events"
 import type { StoredMessagePart } from "../contracts/message-parts"
 import type { ChatModel, ResponseInputContent, ResponseInputItem } from "../domain/chat/types"
@@ -30,6 +30,9 @@ export interface HarnessRuntimeOptions {
   now?: () => Date
 }
 
+// A cancelled turn is stored as failed with this message until P1 adds an aborted state
+export const CANCELLED_MESSAGE = "Cancelled"
+
 interface SessionPromptQueue {
   active: SubmitPromptCommand | null
   pending: SubmitPromptCommand[]
@@ -41,6 +44,7 @@ interface SessionPromptQueue {
 export class HarnessRuntime {
   private readonly sessionQueues = new Map<string, SessionPromptQueue>()
   private readonly agentLoop: AgentLoop
+  private readonly sessionAbortControllers = new Map<string, AbortController>()
   private readonly todoStates = new TodoStateStore()
 
   constructor(private readonly options: HarnessRuntimeOptions) {
@@ -69,8 +73,14 @@ export class HarnessRuntime {
     void this.drainSession(command.sessionId, queue)
   }
 
+  cancelSession(command: CancelChatCommand): void {
+    this.options.cancelQuestionsForSession?.(command.sessionId)
+    this.sessionAbortControllers.get(command.sessionId)?.abort()
+  }
+
   deleteSession(command: DeleteSessionCommand): void {
     this.options.cancelQuestionsForSession?.(command.sessionId)
+    this.sessionAbortControllers.get(command.sessionId)?.abort()
     const queue = this.sessionQueues.get(command.sessionId)
     if (!queue) {
       this.cleanupSession(command.sessionId)
@@ -148,6 +158,9 @@ export class HarnessRuntime {
       })
       if (!begun.created) return
       turn = begun.turn
+      // Created right after the turn opens so a cancel during snapshot loading is not lost
+      const abortController = new AbortController()
+      this.sessionAbortControllers.set(command.sessionId, abortController)
       emit({
         type: HARNESS_EVENT_TYPES.CHAT_STARTED,
         requestId: command.requestId,
@@ -237,6 +250,7 @@ export class HarnessRuntime {
         buildRequest: (steps, options) => assembleRequest(snapshot, steps, options),
         persistBatch,
         context: toolContext,
+        signal: abortController.signal,
         onTextDelta(text) { emit({ type: HARNESS_EVENT_TYPES.ASSISTANT_DELTA, requestId: command.requestId, sessionId: command.sessionId, text }) },
         onToolStarted(toolCallId, toolName) { emit({ type: HARNESS_EVENT_TYPES.TOOL_STARTED, requestId: command.requestId, sessionId: command.sessionId, toolCallId, toolName }) },
         onToolCompleted(toolCallId, toolName) { emit({ type: HARNESS_EVENT_TYPES.TOOL_COMPLETED, requestId: command.requestId, sessionId: command.sessionId, toolCallId, toolName }) },
@@ -247,9 +261,10 @@ export class HarnessRuntime {
       finished = true
       emit({ type: HARNESS_EVENT_TYPES.CHAT_COMPLETED, requestId: command.requestId, sessionId: command.sessionId })
     } catch (error) {
+      const cancelled = this.sessionAbortControllers.get(command.sessionId)?.signal.aborted === true
       const message = error instanceof TurnGoneError
         ? "Session was deleted."
-        : (error instanceof Error ? error.message : "Unknown chat error")
+        : cancelled ? CANCELLED_MESSAGE : (error instanceof Error ? error.message : "Unknown chat error")
       // A failed completed write rolls back, so the row is still running and must be marked failed or the session stays blocked
       if (turn && !finished && !(error instanceof TurnGoneError)) {
         try {
@@ -263,6 +278,7 @@ export class HarnessRuntime {
       }
       fail(message)
     } finally {
+      this.sessionAbortControllers.delete(command.sessionId)
       try { environment?.close() } catch { /* Keep queue cleanup running if adapter cleanup fails */ }
       try { await model?.close?.() } catch { /* A transport cleanup error must not block the next prompt */ }
       if (todoScope.type === "request") this.todoStates.clearRequest(todoScope.id)

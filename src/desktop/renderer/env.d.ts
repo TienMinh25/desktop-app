@@ -56,6 +56,17 @@ declare global {
     listSessionHistory: (sessionId: string) => Promise<SessionHistoryTurn[]>
     openMediaPath: (filePath: string) => Promise<OpenMediaPathResult>
     searchSidebar: (query: string) => Promise<SidebarSearchResult>
+    openLogWindow: () => Promise<void>
+    getLogHistory: () => Promise<
+      Array<{
+        category: "api" | "ipc"
+        level: "info" | "error"
+        env: string
+        message: string
+        meta?: unknown
+      }>
+    >
+    clearLogHistory: () => Promise<void>
   }
 
   interface Window {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type UIEvent } from "react"
 import type { McpConnectorItem } from "../../../../../../contracts/mcp-registry"
+import { MCP_SEARCH_CONFIG } from "../../../../constants"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
 import { toast, useCustomizeStore } from "../../../../stores"
 import { AddCustomConnectorModal } from "./connectors/AddCustomConnectorModal"
@@ -41,12 +42,19 @@ export function CustomizePanel() {
 
   useClickOutside(addMenuRef, () => setIsAddMenuOpen(false))
 
+  const trimmedSearch = searchQuery.trim()
+  const isDiscoverSearchTooShort =
+    trimmedSearch.length > 0 && trimmedSearch.length < MCP_SEARCH_CONFIG.MIN_DISCOVER_QUERY_LENGTH
+
   useEffect(() => {
+    if (trimmedSearch.length > 0 && trimmedSearch.length < MCP_SEARCH_CONFIG.MIN_DISCOVER_QUERY_LENGTH) {
+      return
+    }
     const timer = window.setTimeout(() => {
-      setDebouncedSearch(searchQuery.trim())
-    }, 320)
+      setDebouncedSearch(trimmedSearch)
+    }, MCP_SEARCH_CONFIG.DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [searchQuery])
+  }, [trimmedSearch])
 
   const fetchInitialServers = useCallback(async (search: string) => {
     setIsLoadingInitial(true)
@@ -54,7 +62,7 @@ export function CustomizePanel() {
     loadingCursorRef.current = null
     try {
       const response = await window.desktop.listMcpServers({
-        limit: 20,
+        limit: MCP_SEARCH_CONFIG.PAGE_SIZE,
         version: "latest",
         search: search || undefined,
       })
@@ -72,7 +80,7 @@ export function CustomizePanel() {
   }, [debouncedSearch, fetchInitialServers])
 
   const loadMoreServers = useCallback(async () => {
-    if (!nextCursor || isLoadingInitial || isLoadingMore) return
+    if (isDiscoverSearchTooShort || !nextCursor || isLoadingInitial || isLoadingMore) return
     if (loadingCursorRef.current === nextCursor) return
 
     loadingCursorRef.current = nextCursor
@@ -80,7 +88,7 @@ export function CustomizePanel() {
     try {
       const response = await window.desktop.listMcpServers({
         cursor: nextCursor,
-        limit: 20,
+        limit: MCP_SEARCH_CONFIG.PAGE_SIZE,
         version: "latest",
         search: debouncedSearch || undefined,
       })
@@ -96,7 +104,7 @@ export function CustomizePanel() {
     } finally {
       setIsLoadingMore(false)
     }
-  }, [nextCursor, isLoadingInitial, isLoadingMore, debouncedSearch])
+  }, [isDiscoverSearchTooShort, nextCursor, isLoadingInitial, isLoadingMore, debouncedSearch])
 
   useEffect(() => {
     if (mainTab !== "connectors" || subTab !== "discover" || selectedConnector) return
@@ -110,7 +118,7 @@ export function CustomizePanel() {
           void loadMoreServers()
         }
       },
-      { root, rootMargin: "240px" },
+      { root, rootMargin: `${MCP_SEARCH_CONFIG.SCROLL_THRESHOLD_PX}px` },
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
@@ -120,7 +128,7 @@ export function CustomizePanel() {
     if (mainTab !== "connectors" || subTab !== "discover" || selectedConnector) return
     const target = event.currentTarget
     const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight
-    if (distanceToBottom < 240) {
+    if (distanceToBottom < MCP_SEARCH_CONFIG.SCROLL_THRESHOLD_PX) {
       void loadMoreServers()
     }
   }
@@ -372,6 +380,7 @@ export function CustomizePanel() {
               filteredYourItems={filteredYourItems}
               isLoadingInitial={isLoadingInitial}
               isLoadingMore={isLoadingMore}
+              isSearchTooShort={isDiscoverSearchTooShort}
               loadError={loadError}
               nextCursor={nextCursor}
               sentinelRef={sentinelRef}

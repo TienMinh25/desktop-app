@@ -603,3 +603,58 @@ it("stores read media as blob for small images and path reference for PDFs", asy
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+it("Stop cancels the running turn: stored as failed Cancelled, chat.failed emitted, the session keeps working", async () => {
+  const backing = new InMemoryTurnStore()
+  const finishes: FinishTurnInput[] = []
+  const store: TurnStore = {
+    recoverInterrupted: () => backing.recoverInterrupted(),
+    beginTurn: (input) => backing.beginTurn(input),
+    appendSteps: (turn, items, blobs) => backing.appendSteps(turn, items, blobs),
+    finishTurn(turn: TurnHandle, input: FinishTurnInput) { finishes.push(input); backing.finishTurn(turn, input) },
+    loadBlob: (sha) => backing.loadBlob(sha),
+  }
+  const events: HarnessEvent[] = []
+  let started!: () => void
+  const streaming = new Promise<void>((resolve) => { started = resolve })
+  let finished = 0
+  let done!: () => void
+  const settled = new Promise<void>((resolve) => { done = resolve })
+  let call = 0
+  const runtime = new HarnessRuntime({
+    turns: store,
+    tools: new ToolRegistry(),
+    permissions: new PermissionManager(() => {}),
+    createChatModel: () => ({
+      async *stream(_request: ResponsesRequest, signal?: AbortSignal) {
+        call += 1
+        if (call === 1) {
+          started()
+          // Waits for Stop, the way a slow model stream would
+          await new Promise<void>((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }))
+        }
+        yield assistantOutput("second answer")
+        yield { type: "stream.finished" } as ChatStreamEvent
+      },
+    }),
+    createExecutionEnvironment: (path) => new TrackingEnvironment(path),
+    emit(event) {
+      events.push(event)
+      if (event.type === "chat.completed" || event.type === "chat.failed") {
+        finished += 1
+        if (finished === 2) done()
+      }
+    },
+  })
+
+  runtime.submit({ type: "chat.submit", requestId: "r1", sessionId: "s-stop", prompt: "long task", model: "test", approvalMode: "manual" })
+  await streaming
+  runtime.cancelSession({ type: "chat.cancel", sessionId: "s-stop" })
+  runtime.submit({ type: "chat.submit", requestId: "r2", sessionId: "s-stop", prompt: "next", model: "test", approvalMode: "manual" })
+  await settled
+
+  expect(finishes[0]).toMatchObject({ state: "failed", errorMessage: "Cancelled" })
+  expect(events.filter((e) => e.type === "chat.failed" || e.type === "chat.completed").map((e) => [e.type, e.requestId]))
+    .toEqual([["chat.failed", "r1"], ["chat.completed", "r2"]])
+  expect(events.find((e) => e.type === "chat.failed")).toMatchObject({ message: "Cancelled" })
+})

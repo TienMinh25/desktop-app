@@ -27,10 +27,11 @@ test("renders stored turns in order, followed by unsettled history and the live 
   }
   const html = renderToStaticMarkup(<ConversationStream
     historyTurns={[first, { ...first, userSeq: 3, assistantSeq: 4, prompt: "Later prompt",
-      state: "failed", errorMessage: "Provider unavailable", media: [], toolCalls: [] }]}
+      state: "failed", errorMessage: "Provider unavailable", media: [], toolCalls: [] },
+    { ...first, userSeq: 5, assistantSeq: 6, prompt: "Stopped prompt",
+      state: "failed", errorMessage: "Cancelled", media: [], toolCalls: [] }]}
     pendingHistoryTurns={[{ ...live, requestId: "settled", prompt: "Awaiting history", assistantText: "Settled answer", warnings: [], isStreaming: false }]}
     liveTurn={live}
-    pendingPrompts={[]}
     onPermissionDecision={() => {}}
     onQuestionAnswer={() => {}}
   />)
@@ -53,9 +54,29 @@ test("renders stored turns in order, followed by unsettled history and the live 
   expect(image).toContain(`src="ccodex-media://${hash}"`)
   expect(image).toContain('loading="lazy"')
   expect(image).toContain('alt="screenshot"')
+  expect(html).toContain('role="status">Cancelled</div>')
   for (const [name, path] of [["Large image", "/large.png"], ["Notes", "/notes.pdf"]]) {
     expect(html).toContain(`<button type="button"><strong>${name}</strong><span>${path}</span></button>`)
   }
+})
+
+test("the live question offers keyboard-selectable choices, a custom answer, and Skip", () => {
+  const html = renderToStaticMarkup(<ConversationStream
+    historyTurns={[]}
+    liveTurn={{
+      requestId: "live", sessionId: "s1", prompt: "Live prompt", assistantText: "",
+      warnings: [], error: null, isStreaming: true, permission: null, todos: [], toolStatus: null,
+      question: { id: "q1", prompt: "Choose a strategy\nWhere should the session live?", choices: ["Cookies\nKeep it on the server."] },
+    }}
+    onPermissionDecision={() => {}}
+    onQuestionAnswer={() => {}}
+  />)
+  expect(html).toContain('<fieldset aria-label="Choose a strategy">')
+  expect(html).toContain('type="radio"')
+  expect(html).toContain("Keep it on the server.")
+  expect(html).toContain('aria-label="Your answer"')
+  expect(html).toContain("Skip for now")
+  expect(html).toContain('disabled="">Continue with selection')
 })
 
 test("the path button opens its exact path and shows why it could not, until a successful retry", async () => {
@@ -95,7 +116,6 @@ test("a history turn shows its kept warnings, todos and spoken tool status", () 
   const html = renderToStaticMarkup(<ConversationStream
     historyTurns={[turn]}
     retiredTurns={{ w1: { warnings: ["AGENTS.md truncated"], todos: [{ id: "t1", content: "Write test", status: "completed" }] } }}
-    pendingPrompts={[]}
     onPermissionDecision={() => {}}
     onQuestionAnswer={() => {}}
   />)

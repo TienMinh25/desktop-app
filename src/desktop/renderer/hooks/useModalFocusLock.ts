@@ -10,6 +10,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(", ")
 
 interface UseModalFocusLockOptions {
+  enabled?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   onEscape?: () => void
 }
@@ -22,9 +23,10 @@ export function useModalFocusLock(
   modalRef: RefObject<HTMLElement | null>,
   options: UseModalFocusLockOptions = {},
 ): void {
-  const { initialFocusRef, onEscape } = options
+  const { enabled = true, initialFocusRef, onEscape } = options
 
   useEffect(() => {
+    if (!enabled) return
     const container = modalRef.current
     if (!container) return
 
@@ -71,5 +73,5 @@ export function useModalFocusLock(
 
     document.addEventListener("keydown", handleKeyDown, true)
     return () => document.removeEventListener("keydown", handleKeyDown, true)
-  }, [modalRef, initialFocusRef, onEscape])
+  }, [enabled, modalRef, initialFocusRef, onEscape])
 }

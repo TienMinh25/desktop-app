@@ -15,6 +15,7 @@ export { useToastStore, toast, type ToastItem, type ToastType } from "./app/toas
 export {
   useChatStore,
   resolveHistoryTurns,
+  type QueuedPromptItem,
   type TurnState,
   type RetiredTurnExtras,
 } from "./workspace/chat.store"
