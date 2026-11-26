@@ -430,6 +430,47 @@ it("stops before executing a tool when the session disappears", async () => {
   expect(events.at(-1)).toMatchObject({ type: "chat.failed", message: "Session was deleted." })
 })
 
+it("fails a tool call on round 25 before persisting or executing it", async () => {
+  const turns = new InMemoryTurnStore()
+  const tools = new ToolRegistry()
+  let executions = 0
+  tools.register({
+    definition: { type: "function", name: "echo", description: "echo", parameters: { type: "object" } },
+    async execute() {
+      executions += 1
+      return "ok"
+    },
+  })
+  const requests: ResponsesRequest[] = []
+  const terminal = Promise.withResolvers<HarnessEvent>()
+  const runtime = new HarnessRuntime({
+    turns, tools,
+    permissions: new PermissionManager(() => {}),
+    createExecutionEnvironment: path => new TrackingEnvironment(path),
+    createChatModel: () => ({
+      async *stream(request) {
+        requests.push(request)
+        yield functionCall("echo", {}, `call-${requests.length}`)
+        yield { type: "stream.finished" }
+      },
+    }),
+    emit(event) {
+      if (event.type === "chat.completed" || event.type === "chat.failed") terminal.resolve(event)
+    },
+  })
+
+  runtime.submit({ type: "chat.submit", requestId: "limit", sessionId: "s-limit", prompt: "echo", model: "test", approvalMode: "manual" })
+  const message = "Model requested tool calls on the final round"
+  expect(await terminal.promise).toMatchObject({ type: "chat.failed", message })
+  expect(requests).toHaveLength(25)
+  expect(requests.at(-1)?.tools).toBeUndefined()
+  expect(executions).toBe(24)
+  const { history } = turns.beginTurn({ sessionId: "s-limit", clientRequestId: "next", prompt: "next", workspacePath: process.cwd() })
+  expect(history[0]?.state).toBe("failed")
+  const persisted = history[0]!.items.flatMap(item => item.type === "function_call" ? [item.call_id] : [])
+  expect(persisted).toEqual(Array.from({ length: 24 }, (_, i) => `call-${i + 1}`))
+})
+
 it("stores read media as blob for small images and path reference for PDFs", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ccodex-read-media-"))
   try {

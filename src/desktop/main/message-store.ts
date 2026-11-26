@@ -1,8 +1,5 @@
-import { access } from "node:fs/promises"
-import { isAbsolute } from "node:path"
 import { decodeParts, isMediaRefPart, type StoredMessagePart } from "../../contracts/message-parts"
 import type {
-  OpenMediaPathResult,
   SessionHistoryMedia,
   SessionHistoryToolCall,
   SessionHistoryTurn,
@@ -10,11 +7,8 @@ import type {
 } from "../../contracts/session-history"
 import type { Db } from "../../infrastructure/db/sqlite"
 
-export const MEDIA_PROTOCOL_SCHEME = "ccodex-media"
-
-const SHA256_HEX = /^[a-f0-9]{64}$/i
 const UNREADABLE_TURN_ERROR = "This turn could not be read."
-const TOOL_ERROR_PREFIX = "Tool error:"
+const TOOL_ERROR_PREFIX = "Tool error: "
 
 interface MessageRow {
   seq: number
@@ -35,88 +29,43 @@ export function listSessionHistory(db: Db, sessionId: string): SessionHistoryTur
     ORDER BY seq ASC`).all(sessionId) as MessageRow[]
 
   const turns: SessionHistoryTurn[] = []
-  let index = 0
-  while (index < rows.length) {
-    const current = rows[index]
-    if (!current) break
+  for (let index = 0; index < rows.length; index += 1) {
+    const current = rows[index]!
     const next = rows[index + 1]
-    if (current.role !== "user" || next?.role !== "assistant") {
-      // Isolate an unpaired row so surrounding valid turns still load
-      turns.push(current.role === "user" ? failedTurn(current, null) : failedTurn(null, current))
+    if (current.role === "user" && next?.role === "assistant" && next.seq === current.seq + 1) {
+      turns.push(buildTurn(current, next))
       index += 1
-      continue
+    } else {
+      turns.push(buildTurn(current, null))
     }
-    index += 2
-    turns.push(buildTurn(current, next))
   }
   return turns
 }
 
-export function parseMediaSha256(value: string): string | null {
-  return SHA256_HEX.test(value) ? value.toLowerCase() : null
-}
-
-export function parseMediaProtocolUrl(rawUrl: string): string | null {
-  let url: URL
-  try {
-    url = new URL(rawUrl)
-  } catch {
-    return null
+function buildTurn(first: MessageRow, next: MessageRow | null): SessionHistoryTurn {
+  const user = first.role === "user" ? first : null
+  const assistant = first.role === "assistant" ? first : next
+  const identity = {
+    requestId: assistant?.client_request_id ?? null,
+    userSeq: user?.seq ?? null,
+    assistantSeq: assistant?.seq ?? null,
+    workspacePath: assistant?.workspace_path ?? user?.workspace_path ?? null,
+    updatedAt: (assistant ?? first).updated_at,
   }
-  if (url.protocol !== `${MEDIA_PROTOCOL_SCHEME}:`) return null
-  if (url.username || url.password || url.port || url.search || url.hash) return null
-  if (url.pathname !== "" && url.pathname !== "/") return null
-  return parseMediaSha256(url.hostname)
-}
 
-export function readReferencedMediaBlob(db: Db, rawHash: string): { mime: string; data: Uint8Array } | null {
-  const sha256 = parseMediaSha256(rawHash)
-  if (!sha256) return null
-  const row = db.prepare(`
-    SELECT b.mime, b.data
-    FROM media_blob AS b
-    WHERE b.sha256 = ?
-      AND EXISTS (SELECT 1 FROM artifacts AS a WHERE a.sha256 = b.sha256)`).get(sha256) as
-    | { mime: string; data: Uint8Array }
-    | null
-    | undefined
-  if (!row) return null
-  return {
-    mime: row.mime,
-    data: Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data),
-  }
-}
-
-export function isAllowedArtifactPath(db: Db, filePath: unknown): filePath is string {
-  if (typeof filePath !== "string" || filePath.length === 0 || filePath.includes("\0") || !isAbsolute(filePath)) {
-    return false
-  }
-  return Boolean(db.prepare("SELECT 1 FROM artifacts WHERE path = ?").get(filePath))
-}
-
-export async function openAllowedMediaPath(
-  db: Db,
-  filePath: unknown,
-  openPath: (targetPath: string) => Promise<string>,
-): Promise<OpenMediaPathResult> {
-  if (!isAllowedArtifactPath(db, filePath)) return { ok: false, error: "not-allowed" }
-  try {
-    await access(filePath)
-  } catch {
-    return { ok: false, error: "missing" }
-  }
-  const error = await openPath(filePath)
-  return error ? { ok: false, error: "missing" } : { ok: true }
-}
-
-function buildTurn(user: MessageRow, assistant: MessageRow): SessionHistoryTurn {
-  let userParts: StoredMessagePart[]
-  let assistantParts: StoredMessagePart[]
-  try {
-    userParts = decodeParts(user.parts_json)
-    assistantParts = decodeParts(assistant.parts_json)
-  } catch {
-    return failedTurn(user, assistant)
+  // Decode each row alone so a corrupt answer still shows its prompt
+  const userParts = user ? tryDecode(user.parts_json) : []
+  const assistantParts = assistant ? tryDecode(assistant.parts_json) : []
+  if (!userParts || !assistantParts) {
+    return {
+      ...identity,
+      state: "failed",
+      prompt: userParts ? extractUserText(userParts) : "",
+      assistantText: "",
+      toolCalls: [],
+      media: [],
+      errorMessage: UNREADABLE_TURN_ERROR,
+    }
   }
 
   const textChunks: string[] = []
@@ -143,35 +92,13 @@ function buildTurn(user: MessageRow, assistant: MessageRow): SessionHistoryTurn 
   collectMedia(assistantParts, media)
 
   return {
-    requestId: assistant.client_request_id,
-    userSeq: user.seq,
-    assistantSeq: assistant.seq,
-    state: assistant.state,
-    workspacePath: assistant.workspace_path ?? user.workspace_path,
+    ...identity,
+    state: assistant?.state ?? null,
     prompt: extractUserText(userParts),
     assistantText: textChunks.join(""),
     toolCalls,
     media,
-    errorMessage: assistant.error_message,
-    updatedAt: assistant.updated_at,
-  }
-}
-
-function failedTurn(user: MessageRow | null, assistant: MessageRow | null): SessionHistoryTurn {
-  const anchor = assistant ?? user
-  if (!anchor) throw new Error("Expected at least one message row")
-  return {
-    requestId: assistant?.client_request_id ?? null,
-    userSeq: user?.seq ?? anchor.seq,
-    assistantSeq: assistant?.seq ?? anchor.seq,
-    state: "failed",
-    workspacePath: assistant?.workspace_path ?? user?.workspace_path ?? null,
-    prompt: "",
-    assistantText: "",
-    toolCalls: [],
-    media: [],
-    errorMessage: UNREADABLE_TURN_ERROR,
-    updatedAt: anchor.updated_at,
+    errorMessage: assistant?.error_message ?? null,
   }
 }
 
@@ -226,5 +153,13 @@ function collectMedia(parts: readonly StoredMessagePart[], out: SessionHistoryMe
       if (candidate.path !== undefined) item.path = candidate.path
       out.push(item)
     }
+  }
+}
+
+function tryDecode(partsJson: string): StoredMessagePart[] | null {
+  try {
+    return decodeParts(partsJson)
+  } catch {
+    return null
   }
 }

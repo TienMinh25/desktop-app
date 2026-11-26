@@ -6,6 +6,7 @@ import { toStoredMedia } from "../../../src/harness/context/media"
 import { InMemoryTurnStore } from "../../../src/harness/session/in-memory-turn-store"
 import { SqliteTurnStore } from "../../../src/harness/session/sqlite-turn-store"
 import {
+  mediaArtifacts,
   TurnConflictError,
   TurnGoneError,
   type TurnStore,
@@ -600,5 +601,17 @@ describe("SqliteTurnStore SQLite-specific guarantees", () => {
       workspacePath: "/repo",
     })).toThrow("Unpaired user message at seq 1 in session s1")
     expect(db.prepare("SELECT seq, parts_json FROM messages").all()).toEqual([{ seq: 1, parts_json: parts }])
+  })
+})
+
+describe("mediaArtifacts", () => {
+  it("registers media only from tool output, never from model items", () => {
+    const ref = { type: "ccodex_media_ref", kind: "file", name: "x.pdf", mime: "application/pdf", bytes: 5, turnRead: true, path: "/etc/x.pdf" } as const
+    const items = [
+      ref,
+      { type: "message", role: "assistant", content: [ref] },
+      { type: "function_call_output", call_id: "c1", output: [{ ...ref, path: "/repo/doc.pdf" }] },
+    ] as unknown as StoredMessagePart[]
+    expect(mediaArtifacts(items).map((artifact) => artifact.path)).toEqual(["/repo/doc.pdf"])
   })
 })

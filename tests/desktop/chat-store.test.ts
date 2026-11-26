@@ -1,5 +1,6 @@
 import { expect, it } from "bun:test"
 import type { HarnessEvent } from "../../src/contracts/events"
+import type { SessionRow } from "../../src/contracts/projects"
 import type { SessionHistoryTurn } from "../../src/contracts/session-history"
 import { resolveHistoryTurns, useChatStore } from "../../src/desktop/renderer/stores/workspace/chat.store"
 import { useProjectStore } from "../../src/desktop/renderer/stores/workspace/project.store"
@@ -66,6 +67,7 @@ it("shows failures before start and keeps the active turn when a queued request 
       emit({ ...queued, type: "chat.failed", message: "Session deleted before this prompt started." })
       expect(store().queuedPrompts.s1).toEqual([])
       expect(store().turns.s1).toMatchObject({ ...request, isStreaming: true })
+      expect(store().pendingHistoryTurns.s1).toBeUndefined()
 
       emit({ ...queued, type: "chat.queued", queuePosition: 1 })
       emit({ type: "harness.exited" })
@@ -153,6 +155,160 @@ it("drops stale history responses after a session switch or a newer load", async
   )
 })
 
+it("keeps the reselected session when a new chat finishes creating in another project", async () => {
+  const older = deferred<SessionHistoryTurn[]>()
+  const created = deferred<SessionRow>()
+  const ready = makeHistoryTurn({ requestId: "reselected" })
+  let nextHistory = older.promise
+
+  await withDesktopMock(
+    {
+      createSession: () => created.promise,
+      listSessionHistory: () => nextHistory,
+    },
+    async () => {
+      const store = useProjectStore.getState
+      useProjectStore.setState({
+        assignedProjects: [
+          { id: "p1", key: "P1", name: "Project 1" },
+          { id: "p2", key: "P2", name: "Project 2" },
+        ],
+        sessions: [{ id: "s1", projectId: "p1", title: "Old chat", hasHistory: false, updatedAt: 1 }],
+      })
+      store().selectSession("s1")
+      store().selectProject("p2")
+      expect(store().activeSessionId).toBeNull()
+
+      older.resolve([makeHistoryTurn({ requestId: "stale" })])
+      await flush()
+      expect(useChatStore.getState().history.s1).toBeUndefined()
+
+      nextHistory = Promise.resolve([ready])
+      store().selectSession("s1")
+      created.resolve({ id: "s2", projectId: "p2", title: "New chat", updatedAt: 2, lastPreview: null })
+      await flush()
+      expect(store().activeSessionId).toBe("s1")
+      expect(store().sessions.map((session) => [session.id, session.hasHistory])).toEqual([["s2", false], ["s1", true]])
+      expect(useChatStore.getState().history.s1).toEqual([ready])
+    },
+  )
+})
+
+it("rejects a history response from before a reset even when the same session is selected again", async () => {
+  const stale = deferred<SessionHistoryTurn[]>()
+  const current = deferred<SessionHistoryTurn[]>()
+  let next = stale.promise
+
+  await withDesktopMock({ listSessionHistory: () => next }, async () => {
+    const store = useChatStore.getState
+    const oldLoad = store().loadHistory("s1")
+    store().reset()
+    next = current.promise
+    const newLoad = store().loadHistory("s1")
+
+    stale.resolve([makeHistoryTurn({ requestId: "stale" })])
+    expect(await oldLoad).toBeNull()
+    expect(store().history.s1).toBeUndefined()
+
+    current.resolve([makeHistoryTurn({ requestId: "current" })])
+    await newLoad
+    expect(store().history.s1?.map((turn) => turn.requestId)).toEqual(["current"])
+  })
+})
+
+it("refreshes a completed background turn without replacing the selected session load", async () => {
+  let emit!: (event: HarnessEvent) => void
+  const selected = deferred<SessionHistoryTurn[]>()
+  const staleCompletion = deferred<SessionHistoryTurn[]>()
+  const completed = makeHistoryTurn({ requestId: "background" })
+  const queuedCompleted = makeHistoryTurn({ requestId: "queued", userSeq: 3, assistantSeq: 4 })
+  let background = staleCompletion.promise
+
+  await withDesktopMock(
+    {
+      subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} },
+      listSessionHistory: (sessionId: string) => sessionId === "s1" ? background : selected.promise,
+    },
+    async () => {
+      const store = useChatStore.getState
+      store().subscribeHarness()
+      useProjectStore.setState({
+        sessions: [{ id: "s1", projectId: "p1", title: "Background chat", hasHistory: false, updatedAt: 1 }],
+      })
+      const first = { sessionId: "s1", requestId: "background", prompt: "background prompt" }
+      const queued = { sessionId: "s1", requestId: "queued", prompt: "queued prompt" }
+      emit({ ...first, type: "chat.started" })
+      emit({ ...queued, type: "chat.queued", queuePosition: 1 })
+      emit({ ...first, type: "chat.completed" })
+
+      const selectedLoad = store().loadHistory("s2")
+      staleCompletion.resolve([completed])
+      await flush()
+      expect(store().history.s1).toBeUndefined()
+      expect(store().turns.s1?.requestId).toBe("background")
+
+      background = Promise.resolve([completed, queuedCompleted])
+      emit({ ...queued, type: "chat.started" })
+      emit({ ...queued, type: "chat.completed" })
+      await flush()
+      expect(store().turns.s1).toBeUndefined()
+      expect(store().pendingHistoryTurns.s1).toBeUndefined()
+      expect(store().history.s1).toEqual([completed, queuedCompleted])
+      expect(useProjectStore.getState().sessions[0]?.hasHistory).toBe(true)
+
+      selected.resolve([makeHistoryTurn({ requestId: "selected" })])
+      await selectedLoad
+      expect(store().history.s2?.map((turn) => turn.requestId)).toEqual(["selected"])
+    },
+  )
+})
+
+it("keeps a terminal turn visible until its saved state arrives even after the next prompt starts", async () => {
+  let emit!: (event: HarnessEvent) => void
+  const first = { sessionId: "s1", requestId: "r1", prompt: "first" }
+  const second = { sessionId: "s1", requestId: "r2", prompt: "second" }
+  const persisted = makeHistoryTurn({
+    requestId: first.requestId,
+    state: "failed",
+    errorMessage: "Could not finish the turn",
+  })
+  const initialHistory = deferred<SessionHistoryTurn[]>()
+  let nextHistory = initialHistory.promise
+
+  await withDesktopMock(
+    {
+      subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} },
+      listSessionHistory: () => nextHistory,
+    },
+    async () => {
+      const store = useChatStore.getState
+      store().subscribeHarness()
+
+      emit({ ...first, type: "chat.started" })
+      emit({ ...first, type: "assistant.delta", text: "partial output" })
+      emit({ ...second, type: "chat.queued", queuePosition: 1 })
+      emit({ ...first, type: "chat.failed", message: "Could not finish the turn" })
+      emit({ ...second, type: "chat.started" })
+      expect(store().queuedPrompts.s1).toEqual([])
+      expect(store().turns.s1).toMatchObject({ requestId: "r2", isStreaming: true })
+      expect(store().pendingHistoryTurns.s1).toMatchObject([
+        { requestId: "r1", assistantText: "partial output", error: "Could not finish the turn" },
+      ])
+
+      initialHistory.resolve([{ ...persisted, state: "running" }])
+      await flush()
+      expect(store().pendingHistoryTurns.s1).toHaveLength(1)
+      expect(resolveHistoryTurns(store().history.s1 ?? [], store().turns.s1, store().pendingHistoryTurns.s1)).toEqual([])
+
+      nextHistory = Promise.resolve([persisted])
+      await store().loadHistory("s1")
+      expect(store().pendingHistoryTurns.s1).toBeUndefined()
+      expect(store().history.s1).toEqual([persisted])
+      expect(store().turns.s1).toMatchObject({ requestId: "r2", isStreaming: true })
+    },
+  )
+})
+
 it("removes the live overlay on chat.completed and chat.failed only after history contains the request", async () => {
   let emit!: (event: HarnessEvent) => void
   let nextHistory: SessionHistoryTurn[] = []
@@ -182,7 +338,7 @@ it("removes the live overlay on chat.completed and chat.failed only after histor
       expect(store().history.s1).toEqual([savedR2])
 
       emit({ type: "chat.started", sessionId: "s1", requestId: "r3", prompt: "third" })
-      nextHistory = [savedR2]
+      nextHistory = [savedR2, makeHistoryTurn({ requestId: "r3", state: "running", userSeq: 3, assistantSeq: 4 })]
       emit({ type: "chat.failed", sessionId: "s1", requestId: "r3", prompt: "third", message: "db error" })
       await flush()
       expect(store().turns.s1).toMatchObject({ requestId: "r3", isStreaming: false, error: "db error" })
@@ -221,7 +377,7 @@ it("maps running history turns without a matching live turn to interrupted", asy
       store().subscribeHarness()
 
       await store().loadHistory("s1")
-      expect(store().history.s1?.map((t) => [t.requestId, t.state])).toEqual([
+      expect(resolveHistoryTurns(store().history.s1 ?? [], undefined).map(t => [t.requestId, t.state])).toEqual([
         ["r-old", "interrupted"],
         ["r-live", "interrupted"],
       ])
@@ -255,6 +411,30 @@ it("keeps context.warning entries separate from turn errors", async () => {
       await flush()
       expect(store().turns.s1?.error).toBe("HTTP 502")
       expect(store().turns.s1?.warnings).toEqual(["AGENTS.md truncated", "Rule file unreadable"])
+    },
+  )
+})
+
+it("keeps a turn's context.warning after its live overlay retires into history", async () => {
+  let emit!: (event: HarnessEvent) => void
+  const saved = {
+    requestId: "r1", userSeq: 1, assistantSeq: 2, state: "completed" as const, workspacePath: "/repo",
+    prompt: "hi", assistantText: "ok", toolCalls: [], media: [], errorMessage: null, updatedAt: 1,
+  }
+  await withDesktopMock(
+    {
+      subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} },
+      listSessionHistory: () => Promise.resolve([saved]),
+    },
+    async () => {
+      const store = useChatStore.getState
+      store().subscribeHarness()
+      emit({ type: "chat.started", sessionId: "s1", requestId: "r1", prompt: "hi" })
+      emit({ type: "context.warning", sessionId: "s1", requestId: "r1", message: "AGENTS.md truncated" })
+      emit({ type: "chat.completed", sessionId: "s1", requestId: "r1" })
+      await flush()
+      expect(store().turns.s1).toBeUndefined()
+      expect(store().historyWarnings.r1).toEqual(["AGENTS.md truncated"])
     },
   )
 })

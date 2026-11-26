@@ -17,8 +17,8 @@ export interface SessionHistoryMedia {
 
 export interface SessionHistoryTurn {
   requestId: string | null
-  userSeq: number
-  assistantSeq: number
+  userSeq: number | null
+  assistantSeq: number | null
   state: SessionHistoryTurnState | null
   workspacePath: string | null
   prompt: string

@@ -24,7 +24,8 @@ import { getSystemDispatcher } from "../../infrastructure/http/system-ca"
 import { BackendHttpClient } from "../../infrastructure/http/backend-http-client"
 import { registerIpcHandler, setLogForwarder } from "../../infrastructure/logging/logger"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, syncProjects } from "./project-session-store"
-import { listSessionHistory, MEDIA_PROTOCOL_SCHEME, openAllowedMediaPath, parseMediaProtocolUrl, readReferencedMediaBlob } from "./message-store"
+import { MEDIA_PROTOCOL_SCHEME, openAllowedMediaPath, parseMediaProtocolUrl, readReferencedMediaBlob } from "./media-store"
+import { listSessionHistory } from "./message-store"
 import { migrate, openDb, type Db } from "../../infrastructure/db/sqlite"
 import { fetchProjects } from "../../domain/projects/projects-client"
 import type { ProjectsListResult } from "../../contracts/projects"
@@ -259,7 +260,7 @@ ipcMain.handle(IPC_CHANNELS.SIDEBAR_SEARCH, async (event, query: unknown) => {
     return searchSidebar(getDb(), requireText(query, "query"))
 })
 
-// Renderer input is untrusted, reject empty values before writing
+// Reject blank renderer input before calling the stores
 function requireText(value: unknown, name: string): string {
     if (typeof value !== "string" || !value.trim()) throw new Error(`${name} must be a non-empty string`)
     return value.trim()
@@ -581,9 +582,10 @@ app.whenReady().then(async () => {
         return new Response(request.method === "HEAD" ? null : new Uint8Array(blob.data), {
             status: 200,
             headers: {
+                "Cache-Control": "no-store",
                 "Content-Type": blob.mime,
                 "X-Content-Type-Options": "nosniff",
-                "Content-Security-Policy": "default-src 'none'",
+                "Content-Security-Policy": "default-src 'none'; sandbox",
             },
         })
     })

@@ -1,19 +1,22 @@
 import { Database } from "bun:sqlite"
 import { createHash } from "node:crypto"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "bun:test"
 import { encodeParts, type StoredMessagePart } from "../../src/contracts/message-parts"
+import { listSessionHistory } from "../../src/desktop/main/message-store"
 import {
   isAllowedArtifactPath,
-  listSessionHistory,
   openAllowedMediaPath,
   parseMediaProtocolUrl,
   parseMediaSha256,
   readReferencedMediaBlob,
-} from "../../src/desktop/main/message-store"
+} from "../../src/desktop/main/media-store"
+import { AgentLoop } from "../../src/harness/agent/agent-loop"
+import { ToolRegistry } from "../../src/harness/agent/tool-registry"
 import { toStoredMedia } from "../../src/harness/context/media"
+import { LocalExecutionEnvironment } from "../../src/harness/execution/local-execution-environment"
 import { SqliteTurnStore } from "../../src/harness/session/sqlite-turn-store"
 import { MIGRATIONS } from "../../src/infrastructure/db/migrations"
 import { configureConnection, migrate, type Db } from "../../src/infrastructure/db/sqlite"
@@ -32,7 +35,7 @@ function seedSession(db: Db, sessionId = "s1"): void {
     VALUES (?, 'p1', '/repo', 'Chat', 1, 1)`).run(sessionId)
 }
 
-test("listSessionHistory returns a completed turn with assistant text and two tool calls without raw tool output", () => {
+test("listSessionHistory returns the agent loop's tool statuses and assistant text without raw tool output", async () => {
   const db = memoryDb()
   seedSession(db)
   let tick = 100
@@ -44,27 +47,46 @@ test("listSessionHistory returns a completed turn with assistant text and two to
     prompt: "Check repo files",
     workspacePath: "/repo/app",
   })
-  store.appendSteps(turn, [
-    { type: "function_call", id: "fc-1", call_id: "c1", name: "read", arguments: "{\"path\":\"a.ts\"}" },
-    { type: "function_call", id: "fc-2", call_id: "c2", name: "bash", arguments: "{\"command\":\"ls\"}" },
-  ])
-  store.appendSteps(turn, [
-    { type: "function_call_output", call_id: "c1", output: "RAW_SECRET_OUTPUT" },
-    { type: "function_call_output", call_id: "c2", output: "Tool error: permission denied" },
-  ])
-  store.finishTurn(turn, {
-    items: [
-      {
-        type: "message",
-        role: "assistant",
-        content: [
+  const tools = new ToolRegistry()
+  for (const name of ["read", "bash"]) {
+    tools.register({
+      definition: { type: "function", name, description: name, parameters: { type: "object" } },
+      async execute() {
+        if (name === "bash") throw new Error("permission denied")
+        return "Tool error:RAW_SECRET_OUTPUT"
+      },
+    })
+  }
+  let round = 0
+  const { finalBatch } = await new AgentLoop(tools).run({
+    async *stream() {
+      const items = round++ === 0 ? [
+        { type: "function_call", id: "fc-1", call_id: "c1", name: "read", arguments: "{}" },
+        { type: "function_call", id: "fc-2", call_id: "c2", name: "bash", arguments: "{}" },
+      ] : [{
+        type: "message", role: "assistant", content: [
           { type: "output_text", text: "Checked a.ts. " },
           { type: "output_text", text: "Bash was denied." },
         ],
-      },
-    ],
-    state: "completed",
+      }]
+      yield { type: "response.output-items", items }
+    },
+  }, {
+    buildRequest: () => ({ model: "test", input: [], stream: true, tools: tools.definitions() }),
+    async persistBatch(items) { store.appendSteps(turn, items as readonly StoredMessagePart[]) },
+    context: {
+      workspacePath: "/repo/app",
+      requestId: "req-1",
+      sessionId: "s1",
+      environment: new LocalExecutionEnvironment("/repo/app"),
+      async requirePermission() {},
+      async askUser() { return "answer" },
+      todoScope: { type: "request", id: "req-1" },
+      updateTodos() { return [] },
+    },
+    onTextDelta() {},
   })
+  store.finishTurn(turn, { items: finalBatch, state: "completed" })
 
   const history = listSessionHistory(db, "s1")
   expect(history).toEqual([
@@ -217,7 +239,13 @@ test("listSessionHistory decodes legacy v1 rows with null state and requestId", 
     VALUES ('s1', 1, 'user', ?, 10),
            ('s1', 2, 'assistant', ?, 20)`).run(
     encodeParts([{ type: "text", text: "legacy prompt" }]),
-    encodeParts([{ type: "text", text: "legacy answer" }]),
+    encodeParts([
+      { type: "text", text: "legacy answer" },
+      { type: "message", role: "assistant", content: [
+        { type: "input_image", image_url: "data:image/png;base64,aW1hZ2U=" },
+        { type: "input_file", filename: "legacy.pdf", file_data: "data:application/pdf;base64,cGRm" },
+      ] },
+    ]),
   )
   migrate(db)
 
@@ -235,6 +263,26 @@ test("listSessionHistory decodes legacy v1 rows with null state and requestId", 
       errorMessage: null,
       updatedAt: 20,
     },
+  ])
+})
+
+test("listSessionHistory keeps unpaired messages in order without crossing a gap in sequence numbers", () => {
+  const db = memoryDb()
+  seedSession(db)
+  const insert = db.prepare(`
+    INSERT INTO messages (session_id, seq, role, parts_json, updated_at, workspace_path)
+    VALUES ('s1', ?, ?, ?, ?, ?)`)
+  insert.run(2, "user", encodeParts([{ type: "text", text: "Orphaned prompt" }]), 10, "/first")
+  insert.run(4, "assistant", encodeParts([{ type: "text", text: "Orphaned answer" }]), 20, "/second")
+  insert.run(5, "user", encodeParts([{ type: "text", text: "Paired prompt" }]), 30, null)
+  insert.run(6, "assistant", encodeParts([{ type: "text", text: "Paired answer" }]), 40, null)
+  insert.run(7, "user", encodeParts([{ type: "text", text: "Last prompt" }]), 50, null)
+
+  expect(listSessionHistory(db, "s1")).toMatchObject([
+    { userSeq: 2, assistantSeq: null, state: null, prompt: "Orphaned prompt", assistantText: "", updatedAt: 10, errorMessage: null },
+    { userSeq: null, assistantSeq: 4, state: null, prompt: "", assistantText: "Orphaned answer", updatedAt: 20, errorMessage: null },
+    { userSeq: 5, assistantSeq: 6, state: null, prompt: "Paired prompt", assistantText: "Paired answer", updatedAt: 40 },
+    { userSeq: 7, assistantSeq: null, state: null, prompt: "Last prompt", assistantText: "", updatedAt: 50, errorMessage: null },
   ])
 })
 
@@ -275,7 +323,7 @@ test("listSessionHistory isolates a corrupt parts_json row without failing neigh
     assistantSeq: 4,
     state: "failed",
     workspacePath: "/repo",
-    prompt: "",
+    prompt: "Broken turn",
     assistantText: "",
     toolCalls: [],
     media: [],
@@ -292,14 +340,20 @@ test("parseMediaSha256 and parseMediaProtocolUrl validate 64-char hex hashes and
   expect(parseMediaSha256(hash.slice(0, 63))).toBeNull()
   expect(parseMediaSha256(`${hash}a`)).toBeNull()
   expect(parseMediaSha256(`g${hash.slice(1)}`)).toBeNull()
+  expect(parseMediaSha256([hash])).toBeNull()
 
   expect(parseMediaProtocolUrl(`ccodex-media://${hash}`)).toBe(hash)
   expect(parseMediaProtocolUrl(`ccodex-media://${hash}/`)).toBe(hash)
   expect(parseMediaProtocolUrl(`ccodex-media://${hash.toUpperCase()}`)).toBe(hash)
   expect(parseMediaProtocolUrl(`https://${hash}`)).toBeNull()
   expect(parseMediaProtocolUrl(`ccodex-media://${hash}/extra`)).toBeNull()
+  expect(parseMediaProtocolUrl(`ccodex-media://${hash}/extra/..`)).toBeNull()
   expect(parseMediaProtocolUrl(`ccodex-media://${hash}?a=1`)).toBeNull()
+  expect(parseMediaProtocolUrl(`ccodex-media://${hash}?`)).toBeNull()
   expect(parseMediaProtocolUrl(`ccodex-media://${hash}#frag`)).toBeNull()
+  expect(parseMediaProtocolUrl(`ccodex-media://${hash}#`)).toBeNull()
+  expect(parseMediaProtocolUrl(`ccodex-media://user@${hash}`)).toBeNull()
+  expect(parseMediaProtocolUrl(`ccodex-media://${hash}:123`)).toBeNull()
   expect(parseMediaProtocolUrl("ccodex-media://not-a-hash")).toBeNull()
   expect(parseMediaProtocolUrl("not a url")).toBeNull()
 })
@@ -312,41 +366,72 @@ test("readReferencedMediaBlob serves only blobs referenced by artifacts", () => 
   const orphan = Buffer.from("orphan-png")
   const referencedHash = createHash("sha256").update(referenced).digest("hex")
   const orphanHash = createHash("sha256").update(orphan).digest("hex")
+  const legacyImage = Buffer.from("referenced-bmp")
+  const legacyImageHash = createHash("sha256").update(legacyImage).digest("hex")
 
   db.prepare("INSERT INTO media_blob (sha256, mime, bytes, data, created_at) VALUES (?, 'image/png', ?, ?, 1)")
     .run(referencedHash, referenced.byteLength, referenced)
   db.prepare("INSERT INTO media_blob (sha256, mime, bytes, data, created_at) VALUES (?, 'image/png', ?, ?, 1)")
     .run(orphanHash, orphan.byteLength, orphan)
+  db.prepare("INSERT INTO media_blob (sha256, mime, bytes, data, created_at) VALUES (?, 'image/bmp', ?, ?, 1)")
+    .run(legacyImageHash, legacyImage.byteLength, legacyImage)
 
   const message = db.prepare(`
     INSERT INTO messages (session_id, seq, role, parts_json, updated_at, state)
     VALUES ('s1', 1, 'assistant', '{"v":1,"parts":[]}', 1, 'completed')`).run()
-  db.prepare(`
+  const insertArtifact = db.prepare(`
     INSERT INTO artifacts (message_id, direction, path, name, mime_type, size_bytes, created_at, sha256)
-    VALUES (?, 'out', ?, 'shot.png', 'image/png', ?, 1, ?)`).run(
+    VALUES (?, 'out', ?, ?, ?, ?, 1, ?)`)
+  insertArtifact.run(
     message.lastInsertRowid,
     `media:${referencedHash}`,
+    "shot.png",
+    "image/png",
     referenced.byteLength,
     referencedHash,
+  )
+  insertArtifact.run(
+    message.lastInsertRowid,
+    `media:${legacyImageHash}`,
+    "shot.bmp",
+    "image/bmp",
+    legacyImage.byteLength,
+    legacyImageHash,
   )
 
   const found = readReferencedMediaBlob(db, referencedHash.toUpperCase())
   expect(found?.mime).toBe("image/png")
   expect(Buffer.from(found!.data)).toEqual(referenced)
   expect(readReferencedMediaBlob(db, orphanHash)).toBeNull()
+  expect(readReferencedMediaBlob(db, legacyImageHash)?.mime).toBe("image/bmp")
   expect(readReferencedMediaBlob(db, "0".repeat(64))).toBeNull()
   expect(readReferencedMediaBlob(db, "invalid")).toBeNull()
+
+  db.prepare("DELETE FROM artifacts WHERE sha256 = ?").run(referencedHash)
+  expect(readReferencedMediaBlob(db, referencedHash)).toBeNull()
 })
 
-test("isAllowedArtifactPath and openAllowedMediaPath allow only existing absolute paths in artifacts", async () => {
+test("openAllowedMediaPath opens only supported regular media at absolute paths in artifacts", async () => {
   const db = memoryDb()
   seedSession(db)
-  const dir = mkdtempSync(join(tmpdir(), "ccodex-media-open-"))
-  const existingPath = join(dir, "spec.pdf")
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "ccodex-media-open-"))
+  const existingPath = join(dir, "spec's draft.PDF")
   const deletedPath = join(dir, "gone.pdf")
-  const unreferencedPath = join(dir, "secret.txt")
+  const blobOnlyPath = join(dir, "blob.pdf")
+  const executablePath = join(dir, "script.sh")
+  const directoryPath = join(dir, "folder.pdf")
+  const targetDirectory = join(dir, "target")
+  const unreferencedPath = join(targetDirectory, "other.pdf")
+  const linkDirectory = join(dir, "link")
+  const linkPath = join(linkDirectory, "other.pdf")
+  const url = "file:///absolute/spec.pdf"
   writeFileSync(existingPath, "%PDF-1.7")
-  writeFileSync(unreferencedPath, "secret")
+  mkdirSync(targetDirectory)
+  writeFileSync(unreferencedPath, "%PDF-1.7")
+  writeFileSync(blobOnlyPath, "%PDF-1.7")
+  writeFileSync(executablePath, "")
+  mkdirSync(directoryPath)
+  symlinkSync(targetDirectory, linkDirectory, "junction")
 
   try {
     const message = db.prepare(`
@@ -358,12 +443,17 @@ test("isAllowedArtifactPath and openAllowedMediaPath allow only existing absolut
     insertArtifact.run(message.lastInsertRowid, existingPath, "spec.pdf", null)
     insertArtifact.run(message.lastInsertRowid, deletedPath, "gone.pdf", null)
     insertArtifact.run(message.lastInsertRowid, "relative/spec.pdf", "spec.pdf", null)
-    insertArtifact.run(message.lastInsertRowid, `media:${"a".repeat(64)}`, "shot.png", "a".repeat(64))
+    insertArtifact.run(message.lastInsertRowid, url, "spec.pdf", null)
+    insertArtifact.run(message.lastInsertRowid, executablePath, "script.sh", null)
+    insertArtifact.run(message.lastInsertRowid, directoryPath, "folder.pdf", null)
+    insertArtifact.run(message.lastInsertRowid, linkPath, "other.pdf", null)
+    insertArtifact.run(message.lastInsertRowid, blobOnlyPath, "blob.pdf", "a".repeat(64))
 
     expect(isAllowedArtifactPath(db, existingPath)).toBe(true)
     expect(isAllowedArtifactPath(db, unreferencedPath)).toBe(false)
+    expect(isAllowedArtifactPath(db, blobOnlyPath)).toBe(false)
     expect(isAllowedArtifactPath(db, "relative/spec.pdf")).toBe(false)
-    expect(isAllowedArtifactPath(db, `media:${"a".repeat(64)}`)).toBe(false)
+    expect(isAllowedArtifactPath(db, url)).toBe(false)
     expect(isAllowedArtifactPath(db, `${existingPath}\0`)).toBe(false)
     expect(isAllowedArtifactPath(db, "")).toBe(false)
     expect(isAllowedArtifactPath(db, null)).toBe(false)
@@ -379,7 +469,17 @@ test("isAllowedArtifactPath and openAllowedMediaPath allow only existing absolut
     expect(await openAllowedMediaPath(db, deletedPath, okOpen)).toEqual({ ok: false, error: "missing" })
     expect(await openAllowedMediaPath(db, unreferencedPath, okOpen)).toEqual({ ok: false, error: "not-allowed" })
     expect(await openAllowedMediaPath(db, "relative/spec.pdf", okOpen)).toEqual({ ok: false, error: "not-allowed" })
-    expect(await openAllowedMediaPath(db, existingPath, async () => "No handler")).toEqual({ ok: false, error: "missing" })
+    expect(await openAllowedMediaPath(db, url, okOpen)).toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, executablePath, okOpen)).toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, directoryPath, okOpen)).toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, linkPath, okOpen)).toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, existingPath, async () => "No handler")).toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, existingPath, async () => { throw new Error("Permission denied") }))
+      .toEqual({ ok: false, error: "not-allowed" })
+    expect(await openAllowedMediaPath(db, existingPath, async () => {
+      rmSync(existingPath)
+      return "File disappeared"
+    })).toEqual({ ok: false, error: "missing" })
     expect(opened).toEqual([existingPath])
   } finally {
     rmSync(dir, { recursive: true, force: true })

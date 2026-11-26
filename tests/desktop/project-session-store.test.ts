@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite"
 import { createHash } from "node:crypto"
 import { expect, test } from "bun:test"
 import { createSession, deleteSession, listProjects, listSessions, renameSession, searchSidebar, SessionRunningError, syncProjects } from "../../src/desktop/main/project-session-store"
+import { SqliteTurnStore } from "../../src/harness/session/sqlite-turn-store"
 import { configureConnection, migrate, type Db } from "../../src/infrastructure/db/sqlite"
 
 function memoryDb(): Db {
@@ -66,11 +67,14 @@ test("deleteSession refuses a running session when the harness is alive and allo
   const db = memoryDb()
   syncProjects(db, [{ id: "101", key: "P-101", name: "Formbuilder" }])
   const created = createSession(db, "101", "/home", "Running chat", 1000)
-  db.prepare("INSERT INTO messages (session_id, seq, role, parts_json, updated_at, state, client_request_id) VALUES (?, 1, 'assistant', ?, 1, 'running', 'req-1')")
-    .run(created.id, JSON.stringify({ v: 1, parts: [] }))
+  const { turn } = new SqliteTurnStore(db).beginTurn({
+    sessionId: created.id, clientRequestId: "req-1", prompt: "hello", workspacePath: "/home",
+  })
 
   expect(() => deleteSession(db, created.id, { harnessAlive: true })).toThrow(SessionRunningError)
-  expect(listSessions(db, "101")).toHaveLength(1)
+  expect(listSessions(db, "101").map(session => session.id)).toEqual([created.id])
+  expect(db.prepare("SELECT state FROM messages WHERE id = ?").get(turn.assistantMessageId))
+    .toEqual({ state: "running" })
 
   deleteSession(db, created.id, { harnessAlive: false })
   expect(listSessions(db, "101")).toEqual([])

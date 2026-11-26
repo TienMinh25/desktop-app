@@ -18,11 +18,12 @@ export function WorkspacePage() {
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId)
   const sessions = useProjectStore((state) => state.sessions)
   const activeSessionId = useProjectStore((state) => state.activeSessionId)
-  const setSessionHasHistory = useProjectStore((state) => state.setSessionHasHistory)
 
-  const history = useChatStore((state) => state.history)
-  const turns = useChatStore((state) => state.turns)
-  const queuedPrompts = useChatStore((state) => state.queuedPrompts)
+  const turn = useChatStore((state) => activeSessionId === null ? undefined : state.turns[activeSessionId])
+  const queue = useChatStore((state) => activeSessionId === null ? undefined : state.queuedPrompts[activeSessionId])
+  const history = useChatStore((state) => activeSessionId === null ? undefined : state.history[activeSessionId])
+  const historyWarnings = useChatStore((state) => state.historyWarnings)
+  const pendingTurns = useChatStore((state) => activeSessionId === null ? undefined : state.pendingHistoryTurns[activeSessionId])
   const subscribeHarness = useChatStore((state) => state.subscribeHarness)
   const respondToPermission = useChatStore((state) => state.respondToPermission)
   const respondToQuestion = useChatStore((state) => state.respondToQuestion)
@@ -46,16 +47,8 @@ export function WorkspacePage() {
     void refreshLspStatus()
   }, [refreshLspStatus])
 
-  const turn = activeSessionId === null ? undefined : turns[String(activeSessionId)]
-  const activeQueue = activeSessionId === null ? [] : queuedPrompts[String(activeSessionId)] ?? []
-  const sessionHistory = activeSessionId === null ? [] : history[String(activeSessionId)] ?? []
-  const visibleHistory = resolveHistoryTurns(sessionHistory, turn)
-
-  useEffect(() => {
-    if (activeSessionId && sessionHistory.length > 0 && activeSession && !activeSession.hasHistory) {
-      setSessionHasHistory(activeSessionId, true)
-    }
-  }, [activeSessionId, sessionHistory.length, activeSession, setSessionHasHistory])
+  const activeQueue = queue ?? []
+  const visibleHistory = resolveHistoryTurns(history ?? [], turn, pendingTurns)
 
   return (
     <MainLayout sidebarContent={<ProjectSidebar />}>
@@ -63,7 +56,7 @@ export function WorkspacePage() {
         <CustomizePanel />
       ) : (
         <>
-          {turn || activeQueue.length > 0 || visibleHistory.length > 0 || activeSession?.hasHistory ? (
+          {turn || activeQueue.length > 0 || pendingTurns?.length || visibleHistory.length > 0 || activeSession?.hasHistory ? (
             <>
               <div className={styles.chatTopHeader}>
                 <span>{activeSession?.title ?? "New chat"}</span>
@@ -71,6 +64,8 @@ export function WorkspacePage() {
               <ConversationStream
                 key={activeSessionId ?? undefined}
                 historyTurns={visibleHistory}
+                historyWarnings={historyWarnings}
+                pendingHistoryTurns={pendingTurns}
                 liveTurn={turn}
                 pendingPrompts={activeQueue}
                 onPermissionDecision={(id, decision) => {
@@ -81,7 +76,8 @@ export function WorkspacePage() {
                 }}
               />
             </>
-          ) : (
+          ) : activeSessionId !== null && history === undefined ? null : (
+            // Wait for the history load so an old session does not flash the greeting
             <div className={styles.centerGreeting}>
               <svg
                 className={styles.cloudIcon}

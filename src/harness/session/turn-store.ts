@@ -80,13 +80,9 @@ export function decodeMessageParts(partsJson: string, role: "user" | "assistant"
 
 export function mediaArtifacts(items: readonly StoredMessagePart[]): TurnArtifact[] {
   return items.flatMap((item) => {
-    let parts: readonly unknown[] = [item]
-    if (item.type === "function_call_output" && "output" in item && Array.isArray(item.output)) {
-      parts = item.output
-    } else if (item.type === "message" && "content" in item && Array.isArray(item.content)) {
-      parts = item.content
-    }
-    return parts.filter(isMediaRefPart).map<TurnArtifact>((ref) => ({
+    // Only read output registers media, so a model item cannot register a path that media:open-path would open
+    if (item.type !== "function_call_output" || !("output" in item) || !Array.isArray(item.output)) return []
+    return item.output.filter(isMediaRefPart).map<TurnArtifact>((ref) => ({
       direction: "out",
       path: ref.sha256 ? `media:${ref.sha256}` : ref.path!,
       name: ref.name,
