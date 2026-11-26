@@ -16,6 +16,13 @@ import {
   type TurnStore,
 } from "./turn-store"
 
+// projects.id holds the backend project id as text, parsed strictly so "0x10" or "1e2" never maps to another project
+function parseProjectId(value: string): number {
+  const id = /^[1-9]\d*$/.test(value) ? Number(value) : Number.NaN
+  if (!Number.isSafeInteger(id)) throw new Error(`Invalid project id: ${value}`)
+  return id
+}
+
 const RUNNING_TURN = "id = ? AND session_id = ? AND client_request_id = ? AND state = 'running'"
 
 interface MessageRow {
@@ -48,6 +55,9 @@ export class SqliteTurnStore implements TurnStore {
 
   beginTurn(input: BeginTurnInput): BeginTurnResult {
     return this.db.transaction(() => {
+      const session = this.db.prepare(`SELECT project_id FROM sessions WHERE id = ?`).get(input.sessionId) as { project_id: string } | undefined
+      if (!session) throw new Error("Session was deleted.")
+      const projectId = parseProjectId(session.project_id)
       const existing = this.db.prepare(`
         SELECT id, seq, state, workspace_path
         FROM messages
@@ -69,6 +79,7 @@ export class SqliteTurnStore implements TurnStore {
           ORDER BY seq ASC`).all(input.sessionId, userSeq) as MessageRow[]
         return {
           created: false,
+          projectId,
           turn: {
             sessionId: input.sessionId,
             userMessageId: userRow.id,
@@ -129,6 +140,7 @@ export class SqliteTurnStore implements TurnStore {
 
       return {
         created: true,
+        projectId,
         turn: {
           sessionId: input.sessionId,
           userMessageId: Number(userInsert.lastInsertRowid),

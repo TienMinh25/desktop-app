@@ -25,6 +25,8 @@ export interface BeginTurnInput {
 
 export interface BeginTurnResult {
   created: boolean
+  /** Backend project of the session, sent as project_id on every chat request. */
+  projectId: number
   turn: TurnHandle
   history: HistoryTurn[]
 }

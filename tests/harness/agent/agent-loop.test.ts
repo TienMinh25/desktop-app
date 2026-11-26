@@ -44,9 +44,9 @@ function requestBuilder(registry: ToolRegistry, ctx = context) {
   return (steps: readonly ResponseInputItem[], options?: { final?: boolean }): ResponsesRequest => {
     const tools = options?.final ? [] : registry.definitions(ctx)
     return {
+      project_id: 1,
       model: "test",
       input: [{ type: "message", role: "user", content: "hello" }, ...steps],
-      stream: true,
       ...(tools.length ? { tools } : {}),
     }
   }

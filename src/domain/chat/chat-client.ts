@@ -42,7 +42,7 @@ export class ChatClient implements ChatModel {
     else signal?.addEventListener("abort", forwardAbort, { once: true })
 
     try {
-      const body = { ...request, model: this.config.model, stream: true as const }
+      const body = { ...request, model: this.config.model }
       enforceRequestMediaLimits(body.input)
       const serializedBody = JSON.stringify(body)
       const serializedBytes = Buffer.byteLength(serializedBody, "utf8")

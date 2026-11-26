@@ -6,6 +6,7 @@ import { hydrateMedia, type HydrateMediaOptions } from "./media"
 import type { HistoryTurn, InstructionSection } from "./types"
 
 export interface TurnSnapshot {
+  readonly projectId: number
   readonly model: string
   readonly prompt: string
   readonly tools: readonly ChatToolDefinition[]
@@ -14,6 +15,7 @@ export interface TurnSnapshot {
 }
 
 export interface LoadTurnSnapshotInput {
+  projectId: number
   model: string
   prompt: string
   history: readonly HistoryTurn[]
@@ -85,6 +87,7 @@ export async function loadTurnSnapshot(input: LoadTurnSnapshotInput): Promise<Lo
   }
 
   const snapshot: TurnSnapshot = deepFreeze({
+    projectId: input.projectId,
     model: input.model,
     prompt: input.prompt,
     tools: structuredClone(input.tools ?? []),

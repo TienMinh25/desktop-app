@@ -15,11 +15,15 @@ export function assembleRequest(
   steps: readonly ResponseInputItem[],
   options?: AssembleOptions,
 ): ResponsesRequest {
-  const instructionItems: ResponseInputItem[] = snapshot.instructions.map((section) => ({
+  // Claude has no developer role, so all instructions go in one system message the backend maps to its system field
+  const instructionItem: ResponseInputItem = {
     type: "message",
-    role: "developer",
-    content: section.text,
-  }))
+    role: "system",
+    // Label workspace rules so they stay distinct from the app's own instructions in the merged text
+    content: snapshot.instructions
+      .map((section) => section.kind === "agents_md" ? `AGENTS.md from the workspace:\n${section.text}` : section.text)
+      .join("\n\n"),
+  }
   const historyItems: ResponseInputItem[] = snapshot.history.flatMap((turn) => turn.items)
   const currentPrompt: ResponseInputItem = {
     type: "message",
@@ -29,9 +33,9 @@ export function assembleRequest(
 
   const tools = options?.final || snapshot.tools.length === 0 ? undefined : [...snapshot.tools]
   const request: ResponsesRequest = {
+    project_id: snapshot.projectId,
     model: snapshot.model,
-    input: [...instructionItems, ...historyItems, currentPrompt, ...steps],
-    stream: true,
+    input: [instructionItem, ...historyItems, currentPrompt, ...steps],
     ...(tools ? { tools } : {}),
   }
 

@@ -37,7 +37,7 @@ function createSqliteHarness(migrations?: readonly string[]): { harness: StoreHa
   const db = new Database(":memory:") as unknown as Db
   configureConnection(db)
   migrate(db, undefined, migrations)
-  db.exec("INSERT INTO projects (id, key, name, fetched_at) VALUES ('p1', 'P-1', 'Project', 1)")
+  db.exec("INSERT INTO projects (id, key, name, fetched_at) VALUES ('1002', 'P-1', 'Project', 1)")
 
   let tick = 1_000
   const store = new SqliteTurnStore(db, () => ++tick)
@@ -46,7 +46,7 @@ function createSqliteHarness(migrations?: readonly string[]): { harness: StoreHa
     createSession(sessionId) {
       db.prepare(`
         INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at)
-        VALUES (?, 'p1', '/repo', 'Chat', 1, 1)`).run(sessionId)
+        VALUES (?, '1002', '/repo', 'Chat', 1, 1)`).run(sessionId)
     },
     deleteSession(sessionId) {
       db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId)
@@ -81,7 +81,7 @@ function createSqliteHarness(migrations?: readonly string[]): { harness: StoreHa
 }
 
 function createInMemoryHarness(): StoreHarness {
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   return {
     store,
     createSession() {},
@@ -123,6 +123,7 @@ function runTurnStoreSuite(name: string, createHarness: () => StoreHarness) {
         workspacePath: "/repo/a",
       })
       expect(first.history).toEqual([])
+      expect(first.projectId).toBe(1002)
       expect(first.turn).toMatchObject({
         sessionId: "s1",
         userSeq: 1,
@@ -219,6 +220,7 @@ function runTurnStoreSuite(name: string, createHarness: () => StoreHarness) {
       })
 
       expect(t2Retry.turn).toEqual(t2First.turn)
+      expect(t2Retry.projectId).toBe(1002)
       expect(t2Retry.history).toEqual(t2First.history)
       expect(t2Retry.history).toHaveLength(1)
 
@@ -491,6 +493,19 @@ runTurnStoreSuite("SqliteTurnStore", () => createSqliteHarness().harness)
 runTurnStoreSuite("InMemoryTurnStore", createInMemoryHarness)
 
 describe("SqliteTurnStore SQLite-specific guarantees", () => {
+  it("reads project_id from the session and rejects a missing session or non-numeric id before writing", () => {
+    const { harness, db } = createSqliteHarness()
+    const begin = (sessionId: string) => harness.store.beginTurn({ sessionId, clientRequestId: "r", prompt: "p", workspacePath: "/repo" })
+    db.exec("INSERT INTO projects (id, key, name, fetched_at) VALUES ('2003', 'P-2', 'Other', 1), ('0x10', 'P-3', 'Hex', 1)")
+    db.exec("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES ('s-other', '2003', '/repo', 'Chat', 1, 1), ('s-hex', '0x10', '/repo', 'Chat', 1, 1)")
+
+    expect(begin("s-other").projectId).toBe(2003)
+    expect(() => begin("s-missing")).toThrow("Session was deleted.")
+    expect(() => begin("s-hex")).toThrow("Invalid project id: 0x10")
+    const rows = db.prepare("SELECT session_id FROM messages WHERE session_id IN ('s-missing', 's-hex')").all()
+    expect(rows).toEqual([])
+  })
+
   it("rejects a stale handle even when SQLite reuses its message ID", () => {
     const { harness } = createSqliteHarness()
     harness.createSession("s1")

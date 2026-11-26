@@ -24,8 +24,8 @@ for (const milestone of ["begin", "calls", "first-output"]) {
       try {
         configureConnection(setup)
         migrate(setup)
-        setup.exec("INSERT INTO projects (id, key, name, fetched_at) VALUES ('p1', 'P1', 'Project', 1)")
-        setup.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES ('s1', 'p1', ?, 'Chat', 1, 1)").run(dir)
+        setup.exec("INSERT INTO projects (id, key, name, fetched_at) VALUES ('101', 'P1', 'Project', 1)")
+        setup.prepare("INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at) VALUES ('s1', '101', ?, 'Chat', 1, 1)").run(dir)
       } finally {
         setup.close()
       }

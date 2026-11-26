@@ -191,6 +191,7 @@ export class HarnessRuntime {
       }
 
       const { snapshot, warnings } = await loadTurnSnapshot({
+        projectId: begun.projectId,
         model: command.model,
         prompt: command.prompt,
         history: begun.history,

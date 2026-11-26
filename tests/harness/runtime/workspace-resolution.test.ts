@@ -26,7 +26,7 @@ it("runs a prompt from the user's home directory when no workspace was selected"
     },
   }
   const runtime = new HarnessRuntime({
-    turns: new InMemoryTurnStore(),
+    turns: new InMemoryTurnStore(1002),
     tools: new ToolRegistry(),
     permissions: new PermissionManager((event) => events.push(event)),
     createChatModel: () => model,
@@ -80,7 +80,7 @@ it("persists each turn's workspace before starting it and completes after the fi
     let fail!: (error: Error) => void
     const completed = new Promise<void>((resolve, reject) => { complete = resolve; fail = reject })
     const runtime = new HarnessRuntime({
-      turns: new TrackingTurnStore(),
+      turns: new TrackingTurnStore(1002),
       tools: new ToolRegistry(),
       permissions: new PermissionManager(() => {}),
       createChatModel: () => ({ async *stream() {

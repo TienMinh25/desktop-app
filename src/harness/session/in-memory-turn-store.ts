@@ -25,6 +25,8 @@ interface StoredTurn {
 }
 
 export class InMemoryTurnStore implements TurnStore {
+  constructor(private readonly projectId: number) {}
+
   private nextMessageId = 1
   private readonly turnsBySession = new Map<string, StoredTurn[]>()
   private readonly blobs = new Map<string, Buffer>()
@@ -48,6 +50,7 @@ export class InMemoryTurnStore implements TurnStore {
     if (existingIndex >= 0) {
       return {
         created: false,
+        projectId: this.projectId,
         turn: { ...turns[existingIndex]!.handle },
         history: turns.slice(0, existingIndex).map(toHistoryTurn),
       }
@@ -71,7 +74,7 @@ export class InMemoryTurnStore implements TurnStore {
     }
     turns.push({ handle, userParts, assistantParts: encodeParts([]), errorMessage: null, artifacts: [] })
     this.turnsBySession.set(input.sessionId, turns)
-    return { created: true, turn: { ...handle }, history }
+    return { created: true, projectId: this.projectId, turn: { ...handle }, history }
   }
 
   appendSteps(turn: TurnHandle, items: readonly StoredMessagePart[], blobs: readonly MediaBlob[] = []): void {

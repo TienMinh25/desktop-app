@@ -29,10 +29,10 @@ function memoryDb(migrations?: readonly string[]): Db {
 }
 
 function seedSession(db: Db, sessionId = "s1"): void {
-  db.exec("INSERT OR IGNORE INTO projects (id, key, name, fetched_at) VALUES ('p1', 'P-1', 'Project', 1)")
+  db.exec("INSERT OR IGNORE INTO projects (id, key, name, fetched_at) VALUES ('1002', 'P-1', 'Project', 1)")
   db.prepare(`
     INSERT INTO sessions (id, project_id, directory, title, created_at, updated_at)
-    VALUES (?, 'p1', '/repo', 'Chat', 1, 1)`).run(sessionId)
+    VALUES (?, '1002', '/repo', 'Chat', 1, 1)`).run(sessionId)
 }
 
 test("listSessionHistory returns the agent loop's tool statuses and assistant text without raw tool output", async () => {
@@ -72,7 +72,7 @@ test("listSessionHistory returns the agent loop's tool statuses and assistant te
       yield { type: "response.output-items", items }
     },
   }, {
-    buildRequest: () => ({ model: "test", input: [], stream: true, tools: tools.definitions() }),
+    buildRequest: () => ({ project_id: 1, model: "test", input: [], tools: tools.definitions() }),
     async persistBatch(items) { store.appendSteps(turn, items as readonly StoredMessagePart[]) },
     context: {
       workspacePath: "/repo/app",

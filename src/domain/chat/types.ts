@@ -1,4 +1,4 @@
-export type ChatRole = "system" | "developer" | "user" | "assistant"
+export type ChatRole = "system" | "user" | "assistant"
 
 export interface InputTextContent {
   type: "input_text"
@@ -57,9 +57,9 @@ export interface ChatToolDefinition {
 }
 
 export interface ResponsesRequest {
+  project_id: number
   model: string
   input: ResponseInputItem[]
-  stream: true
   tools?: ChatToolDefinition[]
 }
 

@@ -44,7 +44,8 @@ let dbError: string | null = null
 let turns: TurnStore
 if (!dbPath) {
   dbError = "CCODEX_DB_PATH is not configured."
-  turns = new InMemoryTurnStore()
+  // Never reached: configurationError fails every prompt before beginTurn
+  turns = new InMemoryTurnStore(0)
 } else {
   db = new Database(dbPath)
   configureConnection(db, { synchronous: "FULL" })

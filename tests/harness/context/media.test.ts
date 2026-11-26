@@ -236,7 +236,7 @@ it("counts the complete request and removes only the oldest media needed", () =>
     { role: "user", content: oldImage },
     { role: "user", content: "next" },
   ]
-  const request = { input, model: "mô hình", stream: true as const }
+  const request = { input, model: "mô hình", project_id: 1 }
   const limits = { documentBase64Bytes: 999, imageAndRequestBase64Bytes: Buffer.byteLength(JSON.stringify(request)) }
   expect(boundMedia(request, { ...limits, imageAndRequestBase64Bytes: limits.imageAndRequestBase64Bytes + 1 })).toEqual(input)
   const bounded = boundMedia(request, limits)

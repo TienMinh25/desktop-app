@@ -57,7 +57,7 @@ it("serializes prompts for the same session", async () => {
   let finish!: () => void
   const bothFinished = new Promise<void>((resolve) => { finish = resolve })
   const runtime = new HarnessRuntime({
-    turns: new InMemoryTurnStore(),
+    turns: new InMemoryTurnStore(1002),
     tools: new ToolRegistry(),
     permissions: new PermissionManager(() => {}),
     createChatModel: () => model,
@@ -88,7 +88,7 @@ it("emits chat.failed and closes the execution environment when model creation f
   let created: TrackingEnvironment | undefined
   let failed!: (message: string) => void
   const failure = new Promise<string>((resolve) => { failed = resolve })
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   const runtime = new HarnessRuntime({
     turns: store,
     tools: new ToolRegistry(),
@@ -108,7 +108,7 @@ it("emits chat.failed and closes the execution environment when model creation f
 })
 
 it("commits model aborts as failed and closes the model", async () => {
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   const events: HarnessEvent[] = []
   const command: SubmitPromptCommand = { type: "chat.submit", requestId: "aborted", sessionId: "s1", prompt: "hello", model: "test", approvalMode: "manual" }
   let settle!: () => void
@@ -168,7 +168,7 @@ it("passes the selected approval mode from chat command through runtime to permi
     if (event.type === "permission.required") permissions.respond(event.permissionRequestId, "allow")
   })
   const runtime = new HarnessRuntime({
-    turns: new InMemoryTurnStore(),
+    turns: new InMemoryTurnStore(1002),
     tools,
     permissions,
     createChatModel: () => model,
@@ -211,7 +211,7 @@ it("routes an inline question answer back into the model tool result", async () 
     if (event.type === "question.required") questions.respond(event.questionRequestId, "Keep UtilityProcess IPC")
   })
   const runtime = new HarnessRuntime({
-    turns: new InMemoryTurnStore(),
+    turns: new InMemoryTurnStore(1002),
     tools,
     permissions: new PermissionManager((event) => events.push(event)),
     askUser(question) { return questions.ask(question) },
@@ -234,7 +234,7 @@ it("routes an inline question answer back into the model tool result", async () 
 })
 
 it("emits chat.started only after beginTurn succeeds and turns TurnConflictError into chat.failed", async () => {
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   // Hold an already running turn in s1 so the submitted prompt hits TurnConflictError
   store.beginTurn({ sessionId: "s1", clientRequestId: "existing", prompt: "busy", workspacePath: process.cwd() })
 
@@ -261,7 +261,7 @@ it("emits chat.started only after beginTurn succeeds and turns TurnConflictError
 })
 
 it.each(["running", "completed", "failed", "interrupted"] as const)("ignores a repeated request for a %s turn", (state) => {
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   const command: SubmitPromptCommand = { type: "chat.submit", requestId: "repeated", sessionId: "s1", prompt: "hello", model: "test", approvalMode: "manual" }
   const { turn } = store.beginTurn({ sessionId: command.sessionId, clientRequestId: command.requestId, prompt: command.prompt, workspacePath: process.cwd() })
   if (state === "completed" || state === "failed") store.finishTurn(turn, { state })
@@ -291,7 +291,7 @@ it("emits context.warning after chat.started when AGENTS.md triggers a warning",
     let done!: () => void
     const settled = new Promise<void>((resolve) => { done = resolve })
     const runtime = new HarnessRuntime({
-      turns: new InMemoryTurnStore(),
+      turns: new InMemoryTurnStore(1002),
       tools: new ToolRegistry(),
       permissions: new PermissionManager(() => {}),
       createChatModel: () => ({ async *stream() { yield assistantOutput("ok"); yield { type: "stream.finished" } } }),
@@ -314,7 +314,7 @@ it("emits context.warning after chat.started when AGENTS.md triggers a warning",
 })
 
 it("tries a failed finish after the completed write throws and emits chat.failed, never chat.completed", async () => {
-  const backing = new InMemoryTurnStore()
+  const backing = new InMemoryTurnStore(1002)
   let finishCalls = 0
   const store: TurnStore = {
     recoverInterrupted: () => backing.recoverInterrupted(),
@@ -350,7 +350,7 @@ it("tries a failed finish after the completed write throws and emits chat.failed
 })
 
 it("a rolled back completed write leaves the session usable for the next prompt", async () => {
-  const backing = new InMemoryTurnStore()
+  const backing = new InMemoryTurnStore(1002)
   let failNextComplete = true
   const store: TurnStore = {
     recoverInterrupted: () => backing.recoverInterrupted(),
@@ -393,7 +393,7 @@ it("a rolled back completed write leaves the session usable for the next prompt"
 })
 
 it("emits chat.failed and never chat.completed when appendSteps fails", async () => {
-  const backing = new InMemoryTurnStore()
+  const backing = new InMemoryTurnStore(1002)
   let finishCalls = 0
   let finishState: FinishTurnInput["state"] | undefined
   const store: TurnStore = {
@@ -437,7 +437,7 @@ it("emits chat.failed and never chat.completed when appendSteps fails", async ()
 })
 
 it("stops before executing a tool when the session disappears", async () => {
-  const store = new InMemoryTurnStore()
+  const store = new InMemoryTurnStore(1002)
   let executions = 0
   const tools = new ToolRegistry()
   tools.register({
@@ -472,7 +472,7 @@ it("stops before executing a tool when the session disappears", async () => {
 })
 
 it("fails a tool call on round 25 before persisting or executing it", async () => {
-  const turns = new InMemoryTurnStore()
+  const turns = new InMemoryTurnStore(1002)
   const tools = new ToolRegistry()
   let executions = 0
   tools.register({
@@ -504,6 +504,7 @@ it("fails a tool call on round 25 before persisting or executing it", async () =
   const message = "Model requested tool calls on the final round"
   expect(await terminal.promise).toMatchObject({ type: "chat.failed", message })
   expect(requests).toHaveLength(25)
+  expect(requests[0]?.project_id).toBe(1002)
   expect(requests.at(-1)?.tools).toBeUndefined()
   expect(executions).toBe(24)
   const { history } = turns.beginTurn({ sessionId: "s-limit", clientRequestId: "next", prompt: "next", workspacePath: process.cwd() })
@@ -521,7 +522,7 @@ it("stores read media as blob for small images and path reference for PDFs", asy
     writeFileSync(join(dir, "spec.pdf"), pdfBytes)
     symlinkSync("spec.pdf", join(dir, "document.pdf"))
 
-    const store = new InMemoryTurnStore()
+    const store = new InMemoryTurnStore(1002)
     let begunAssistantId = 0
     const trackedStore: TurnStore = {
       recoverInterrupted: () => store.recoverInterrupted(),
@@ -605,7 +606,7 @@ it("stores read media as blob for small images and path reference for PDFs", asy
 })
 
 it("Stop cancels the running turn: stored as failed Cancelled, chat.failed emitted, the session keeps working", async () => {
-  const backing = new InMemoryTurnStore()
+  const backing = new InMemoryTurnStore(1002)
   const finishes: FinishTurnInput[] = []
   const store: TurnStore = {
     recoverInterrupted: () => backing.recoverInterrupted(),

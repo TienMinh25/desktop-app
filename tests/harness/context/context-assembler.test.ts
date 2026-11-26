@@ -18,7 +18,7 @@ const SAMPLE_TOOLS: ChatToolDefinition[] = [
 const { toStoredMedia } = media
 
 describe("loadTurnSnapshot and assembleRequest", () => {
-  it("builds a golden ResponsesRequest in order: developer instructions, hydrated history, prompt, steps", async () => {
+  it("builds a golden ResponsesRequest in order: one system message, hydrated history, prompt, steps", async () => {
     const imgBytes = Buffer.from("png-bytes")
     const storedImg = toStoredMedia(
       [
@@ -94,6 +94,7 @@ describe("loadTurnSnapshot and assembleRequest", () => {
 
     const readFileBase64 = mock(() => null)
     const { snapshot, warnings } = await loadTurnSnapshot({
+      projectId: 1002,
       model: "claude-sonnet",
       prompt: "Now fix the button.",
       history,
@@ -119,17 +120,15 @@ describe("loadTurnSnapshot and assembleRequest", () => {
 
     const request = assembleRequest(snapshot, currentSteps)
     expect(request).toEqual({
+      project_id: 1002,
       model: "claude-sonnet",
-      stream: true,
       tools: SAMPLE_TOOLS,
       input: [
-        { type: "message", role: "developer", content: BASE_PROMPT },
         {
           type: "message",
-          role: "developer",
-          content: "Environment:\n- Workspace: /repo\n- OS: darwin\n- Date: 2026-11-26",
+          role: "system",
+          content: `${BASE_PROMPT}\n\nEnvironment:\n- Workspace: /repo\n- OS: darwin\n- Date: 2026-11-26\n\nAGENTS.md from the workspace:\nFollow repository style.`,
         },
-        { type: "message", role: "developer", content: "Follow repository style." },
         { type: "message", role: "user", content: "Inspect ui.png, spec.pdf and legacy.pdf" },
         {
           type: "function_call",
@@ -189,6 +188,7 @@ describe("loadTurnSnapshot and assembleRequest", () => {
     }
 
     const { snapshot } = await loadTurnSnapshot({
+      projectId: 1002,
       model: "claude-sonnet",
       prompt: "Summarize",
       history: [],
@@ -267,6 +267,7 @@ describe("loadTurnSnapshot and assembleRequest", () => {
     }
 
     const { snapshot, warnings } = await loadTurnSnapshot({
+      projectId: 1002,
       model: "claude-sonnet",
       prompt: "Round prompt",
       history,
@@ -323,6 +324,7 @@ describe("loadTurnSnapshot and assembleRequest", () => {
     }
 
     const { snapshot } = await loadTurnSnapshot({
+      projectId: 1002,
       model: "claude-sonnet",
       prompt: "Current prompt",
       history: [
@@ -362,8 +364,8 @@ describe("loadTurnSnapshot and assembleRequest", () => {
     try {
       bounded = assembleRequest(snapshot, [currentStep])
       expect(limitMedia).toHaveBeenCalledWith(expect.objectContaining({
+        project_id: 1002,
         model: "claude-sonnet",
-        stream: true,
         input: expect.arrayContaining([currentStep]),
       }))
     } finally {
