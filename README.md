@@ -30,7 +30,7 @@ src/
     renderer/          # Desktop UI
   harness/
     runtime.ts         # Headless prompt/session orchestration and event emission
-    session/           # ConversationStore contract and in-memory adapter
+    session/           # TurnStore contract, SQLite and in-memory adapters
     agent/             # Model loop and tool registry
     permissions/       # allow/ask/deny policy and user approval modes
     tools/             # Tool schemas and adapters; no direct host filesystem/process calls
@@ -90,7 +90,7 @@ bun run dev
 
 Workspace selection is optional; without a picked folder the harness uses the current user's home directory as its execution root. The prompt bar offers **Ask every time** (default), **Auto-approve safe operations**, and **Full access**. These user approval modes are separate from the internal `allow` / `ask` / `deny` policy; explicit deny rules always block. The harness registers file, search, shell, patch, web fetch, LSP, skill, todo, and configured MCP tools. The loop sends each tool result back to the model and continues until the model returns a normal answer without tool calls. A turn is capped at 25 model rounds (the last one without tools) and 16 tool calls per round. There is currently no prompt-cancellation command. IPC commands are validated at runtime with Zod schemas.
 
-Conversation history is behind a `ConversationStore` interface with a process-memory adapter. Restarting the app clears sessions until the SQLite schema is provided. Permission approvals are application-level checks; they do not isolate the process from the host OS. `read` returns UTF-8 text pages of up to 2,000 lines / 100 KB, supports continuation offsets, and rejects text files above 20,000,000 bytes. It also returns supported images and documents as Responses content parts; see `docs/tools.md` for formats and limits. `write` creates missing parent directories. Bash defaults to 120 seconds and returns at most 50,000 output bytes; webfetch downloads up to 5 MiB and returns at most 50 KiB to the model. LSP servers are managed in Customize and MCP servers require environment configuration; MCP currently supports local stdio and the 2025-11-25 handshake. Run harness unit tests with `bun test`.
+Conversation history is stored per turn in SQLite (`~/.ccodex/ccodex.db`) through the `TurnStore` interface. The harness writes each tool-call batch before running it, so a crash leaves the turn marked interrupted on the next start. Permission approvals are application-level checks; they do not isolate the process from the host OS. `read` returns UTF-8 text pages of up to 2,000 lines / 100 KB, supports continuation offsets, and rejects text files above 20,000,000 bytes. It also returns supported images and documents as Responses content parts; see `docs/tools.md` for formats and limits. `write` creates missing parent directories. Bash defaults to 120 seconds and returns at most 50,000 output bytes; webfetch downloads up to 5 MiB and returns at most 50 KiB to the model. LSP servers are managed in Customize and MCP servers require environment configuration; MCP currently supports local stdio and the 2025-11-25 handshake. Run harness unit tests with `bun test`.
 
 ### Code walkthrough
 
@@ -115,7 +115,7 @@ The target is a desktop coding harness with a separate headless harness process,
 ### Implemented in source
 
 - Electron main/preload/renderer are separated from a utility-process harness. Zod validates IPC command payloads; shared message discriminants and exhaustive event/command handling reduce protocol drift.
-- The harness has an agent loop that streams model output, executes tool calls, feeds results back, and continues until the model returns without tool calls. Session message storage is behind `ConversationStore`, currently backed only by process memory.
+- The harness has an agent loop that streams model output, executes tool calls, feeds results back, and continues until the model returns without tool calls. Session message storage is behind `TurnStore`, backed by SQLite.
 - Tool set: `read`, `write`, `edit`, `glob`, `grep`, `shell`, `apply_patch`, `lsp`, `webfetch`, `todowrite`, `question`, global `skill`, and configured MCP tools. `glob`/`grep` use `@vscode/ripgrep`; `apply_patch` uses the JS `diff` library and does not require Git installed on the user's machine. MCP uses the official TypeScript SDK over local stdio.
 - Permission policy has `allow`/`ask`/`deny` rules and UI approval modes (ask every time, auto-approve safe operations, full access); explicit deny remains authoritative. Reads can target paths outside the chosen workspace after permission approval and use descriptor identity checks. `write` creates missing parent directories. Bash defaults to 120 seconds with a 50,000-byte output cap. Webfetch allows HTTP(S), caps downloads at 5 MiB and model output at 50 KiB.
 - `read` returns pages up to 2,000 lines / about 50 KB with a line offset for continuation, and rejects files over 20 MB. It reads outside the selected workspace only subject to permission policy.
@@ -130,7 +130,7 @@ The target is a desktop coding harness with a separate headless harness process,
 - **IPC/schema:** use Zod at runtime boundaries, shared constants for discriminants, base event interfaces, and exhaustive `assertNever` handlers. Keep permission/question response IPC channels; main owns the command `type` and validates the complete command.
 - **MCP/LSP:** use a library for MCP, currently official TypeScript SDK over stdio. LSP profiles are managed in Customize; the app detects user-installed executables and supports definition, references, hover, and diagnostics.
 - **Backend chat/auth:** the backend serves chat at `/api/v1/chat/responses` on `BACKEND_HOST`. Requests use an app-issued access token in `Authorization: Bearer <access_token>`; login, refresh, and logout are handled by the app. No static API key or separate chat endpoint setting is used. Chat request and stream parsing currently follow the Responses-compatible wire format.
-- **Database:** the user will provide the DB schema. Do not invent conversation/message persistence schema yet; preserve `ConversationStore` as the seam. Current harness conversation history is memory-only, and renderer sidebar session data is mock/local UI state rather than durable harness storage.
+- **Database:** main owns the schema and runs the migrations in `src/infrastructure/db/migrations/` once at startup; the harness opens the same file without migrating. Turns, media blobs and artifacts are stored per turn; sessions and projects are written by main.
 - **Build/release:** packaging/build target and release design are for the user to decide. Updates will use a private update server for the internal app, not public GitHub Releases. Do not start a packaging/release implementation before the user chooses specifics.
 
 ### Not done / known gaps
@@ -151,7 +151,7 @@ The target is a desktop coding harness with a separate headless harness process,
 1. Start Lesson 4 with context engineering: trace what history/tool outputs are sent on each model request, identify token/context growth, and explain the current behavior before changing it. Keep durable memory and DB schema out until the user supplies the storage contract.
 2. Add focused context budgeting/compaction design and implementation in small course-aligned increments; preserve tool-call/result pairing and do not drop active-turn state.
 3. Then cover skill/LSP context contributions and define what should be retained or summarized. Reconcile details with the owner before inventing memory persistence semantics.
-4. When the backend project-list contract is available, replace mock assignments through `BackendHttpClient`; later, integrate the user's DB schema behind `ConversationStore`.
+4. When the backend project-list contract is available, replace mock assignments through `BackendHttpClient`.
 5. Before broader release work, resolve cancellation, security boundary gaps, run CVE scans, and wait for the owner to decide packaging/update details.
 
 For immediate orientation in a new session, inspect the working tree first (it contains staged, unstaged, and untracked work), then read this handoff, `docs/harness-design.md`, and the Lesson 4 course material. Avoid resetting or cleaning the working tree: the existing changes are intentional project work.

@@ -91,7 +91,7 @@ test("listSessionHistory returns the agent loop's tool statuses and assistant te
   const history = listSessionHistory(db, "s1")
   expect(history).toEqual([
     {
-      requestId: "req-1",
+      sessionId: "s1", requestId: "req-1",
       userSeq: 1,
       assistantSeq: 2,
       state: "completed",
@@ -197,7 +197,7 @@ test("listSessionHistory represents running and interrupted turns with pending t
 
   expect(listSessionHistory(db, "s-run")).toEqual([
     {
-      requestId: "req-run",
+      sessionId: "s-run", requestId: "req-run",
       userSeq: 1,
       assistantSeq: 2,
       state: "running",
@@ -251,7 +251,7 @@ test("listSessionHistory decodes legacy v1 rows with null state and requestId", 
 
   expect(listSessionHistory(db, "s1")).toEqual([
     {
-      requestId: null,
+      sessionId: "s1", requestId: null,
       userSeq: 1,
       assistantSeq: 2,
       state: null,
@@ -319,7 +319,7 @@ test("listSessionHistory isolates a corrupt parts_json row without failing neigh
   expect(history).toHaveLength(3)
   expect(history[0]).toMatchObject({ requestId: "req-1", state: "completed", prompt: "First", assistantText: "First ok" })
   expect(history[1]).toEqual({
-    requestId: "req-corrupt",
+    sessionId: "s1", requestId: "req-corrupt",
     userSeq: 3,
     assistantSeq: 4,
     state: "failed",
@@ -499,4 +499,16 @@ test("listSessionHistory keeps a readable answer when only the prompt row is cor
   expect(listSessionHistory(db, "s1")).toMatchObject([
     { userSeq: 1, assistantSeq: 2, state: "failed", prompt: "", assistantText: "Saved answer", errorMessage: "This turn could not be read." },
   ])
+})
+
+test("listSessionHistory shows a model refusal as the answer text", () => {
+  const db = memoryDb()
+  seedSession(db)
+  const insert = db.prepare(`
+    INSERT INTO messages (session_id, seq, role, parts_json, updated_at)
+    VALUES ('s1', ?, ?, ?, ?)`)
+  insert.run(1, "user", encodeParts([{ type: "text", text: "Do it" }]), 10)
+  insert.run(2, "assistant", encodeParts([{ type: "message", role: "assistant", content: [{ type: "refusal", refusal: "I can't help with that." }] } as never]), 20)
+
+  expect(listSessionHistory(db, "s1")[0]).toMatchObject({ prompt: "Do it", assistantText: "I can't help with that." })
 })

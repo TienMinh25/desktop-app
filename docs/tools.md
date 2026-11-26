@@ -52,7 +52,7 @@ Chế độ approval của prompt và `HARNESS_PERMISSION_RULES` có thể thay 
 - Harness giữ FIFO queue riêng cho từng session; prompt đang chạy/chờ được phát event từ runtime.
 - Mỗi prompt có tool context và execution environment riêng; các vòng gọi model sau tool call nằm trong cùng AgentLoop.
 - `todowrite` ở scope request bị xóa khi prompt kết thúc; scope goal tiếp tục trong session cho tới khi xóa session.
-- Xóa session bỏ prompt chưa chạy, hủy câu hỏi đang chờ và dọn checklist; prompt đang chạy được phép kết thúc trước khi dọn agent.
+- Xóa session bị từ chối khi session còn turn đang chạy và harness còn sống. Khi xóa được, harness bỏ prompt chưa chạy, hủy câu hỏi đang chờ và dọn checklist.
 
 ## Review capability: `skill`
 

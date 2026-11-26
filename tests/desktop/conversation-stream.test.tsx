@@ -6,7 +6,7 @@ import { ConversationStream, MediaPathRow } from "../../src/desktop/renderer/pag
 test("renders stored turns in order, followed by unsettled history and the live turn", () => {
   const hash = "a".repeat(64)
   const first: SessionHistoryTurn = {
-    requestId: null, userSeq: 1, assistantSeq: 2, state: "interrupted",
+    sessionId: "s1", requestId: null, userSeq: 1, assistantSeq: 2, state: "interrupted",
     workspacePath: "/first", prompt: "Older prompt", assistantText: "Partial answer",
     errorMessage: null, updatedAt: 1,
     toolCalls: [
@@ -86,7 +86,7 @@ test("the path button opens its exact path and shows why it could not, until a s
 
 test("a history turn shows its kept warnings, todos and spoken tool status", () => {
   const turn: SessionHistoryTurn = {
-    requestId: "w1", userSeq: 1, assistantSeq: 2, state: "completed", workspacePath: null,
+    sessionId: "s1", requestId: "w1", userSeq: 1, assistantSeq: 2, state: "completed", workspacePath: null,
     prompt: "Prompt", assistantText: "Answer", errorMessage: null, updatedAt: 1,
     toolCalls: [{ callId: "a", name: "read", status: "error" }], media: [],
   }

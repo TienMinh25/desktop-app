@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react"
 import type { SessionHistoryTurn } from "../../../../../../contracts/session-history"
-import { INTERRUPTED_TURN_MESSAGE, type RetiredTurnExtras, type TurnState } from "../../../../stores"
+import type { RetiredTurnExtras, TurnState } from "../../../../stores"
 import styles from "./ConversationStream.module.scss"
 
 interface ConversationStreamProps {
@@ -209,7 +209,7 @@ export function ConversationStream({
               </>
             )}
             {turn.state === "interrupted" && (
-              <div className={styles.agentStatusLine}>{INTERRUPTED_TURN_MESSAGE}</div>
+              <div className={styles.agentStatusLine}>This turn was interrupted.</div>
             )}
             {turn.errorMessage ? (
               <div className={styles.agentStatusLine}>{turn.errorMessage}</div>

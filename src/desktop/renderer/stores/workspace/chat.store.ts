@@ -3,9 +3,9 @@ import { HARNESS_COMMAND_TYPES, HARNESS_EVENT_TYPES } from "../../../../contract
 import type { ApprovalMode } from "../../../../contracts/permissions"
 import type { SessionHistoryTurn } from "../../../../contracts/session-history"
 import type { TodoItem } from "../../../../contracts/todos"
+import { toast } from "../app/toast.store"
 import { createAppStore } from "../create-store"
 
-export const INTERRUPTED_TURN_MESSAGE = "This turn was interrupted."
 
 const CHAT_ACTIONS = {
   HISTORY_LOADED: "chat/historyLoaded",
@@ -161,7 +161,13 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
     if (event.type === HARNESS_EVENT_TYPES.PONG || event.type === HARNESS_EVENT_TYPES.HARNESS_READY) return
     if ("sessionId" in event && deletedSessions.has(event.sessionId)) return
     switch (event.type) {
-      case HARNESS_EVENT_TYPES.HARNESS_EXITED:
+      case HARNESS_EVENT_TYPES.HARNESS_EXITED: {
+        // A streaming turn shows the loss on itself, prompts queued behind a finished turn need a toast
+        const current = get()
+        const unseenLost = Object.entries(current.queuedPrompts)
+          .filter(([sessionId]) => !current.turns[sessionId]?.isStreaming)
+          .reduce((count, [, queue]) => count + queue.length, 0)
+        if (unseenLost > 0) toast.error(`The harness stopped. ${unseenLost} waiting prompt(s) were lost.`)
         set(
           (state) => {
             const turns: Record<string, TurnState> = {}
@@ -183,6 +189,7 @@ export const useChatStore = createAppStore<ChatStoreState>("ChatStore", (set, ge
           event.type,
         )
         return
+      }
       case HARNESS_EVENT_TYPES.CHAT_QUEUED:
         set(
           (state) => {

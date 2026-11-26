@@ -13,6 +13,20 @@ import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
 import { PromptBar } from "./components/PromptBar/PromptBar"
 import styles from "./WorkspacePage.module.scss"
 
+/** Which chat pane to show: the stream, a failed first load, nothing while loading, or the greeting. */
+export function chatPaneView(input: {
+  hasContent: boolean
+  activeSessionId: string | null
+  historyLoaded: boolean
+  historyFailed: boolean
+}): "stream" | "failed" | "loading" | "greeting" {
+  if (input.hasContent) return "stream"
+  if (input.historyFailed) return "failed"
+  // Wait for the history load so an old session does not flash the greeting
+  if (input.activeSessionId !== null && !input.historyLoaded) return "loading"
+  return "greeting"
+}
+
 export function WorkspacePage() {
   const loadError = useProjectStore((state) => state.loadError)
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId)
@@ -51,6 +65,12 @@ export function WorkspacePage() {
 
   const activeQueue = queue ?? []
   const visibleHistory = resolveHistoryTurns(history ?? [], turn, pendingTurns)
+  const pane = chatPaneView({
+    hasContent: Boolean(turn) || activeQueue.length > 0 || Boolean(pendingTurns?.length) || visibleHistory.length > 0,
+    activeSessionId,
+    historyLoaded: history !== undefined,
+    historyFailed,
+  })
 
   return (
     <MainLayout sidebarContent={<ProjectSidebar />}>
@@ -58,7 +78,7 @@ export function WorkspacePage() {
         <CustomizePanel />
       ) : (
         <>
-          {turn || activeQueue.length > 0 || pendingTurns?.length || visibleHistory.length > 0 || activeSession?.hasHistory ? (
+          {pane === "stream" ? (
             <>
               <div className={styles.chatTopHeader}>
                 <span>{activeSession?.title ?? "New chat"}</span>
@@ -78,13 +98,12 @@ export function WorkspacePage() {
                 }}
               />
             </>
-          ) : historyFailed ? (
+          ) : pane === "failed" ? (
             <div className={styles.centerGreeting} role="alert">
               <p>Could not load this chat.</p>
               <button type="button" onClick={() => void loadHistory(activeSessionId)}>Retry</button>
             </div>
-          ) : activeSessionId !== null && history === undefined ? null : (
-            // Wait for the history load so an old session does not flash the greeting
+          ) : pane === "loading" ? null : (
             <div className={styles.centerGreeting}>
               <svg
                 className={styles.cloudIcon}

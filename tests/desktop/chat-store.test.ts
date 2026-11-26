@@ -4,10 +4,11 @@ import type { SessionRow } from "../../src/contracts/projects"
 import type { SessionHistoryTurn } from "../../src/contracts/session-history"
 import { resolveHistoryTurns, useChatStore } from "../../src/desktop/renderer/stores/workspace/chat.store"
 import { useProjectStore } from "../../src/desktop/renderer/stores/workspace/project.store"
+import { useToastStore } from "../../src/desktop/renderer/stores/app/toast.store"
 
 function makeHistoryTurn(overrides: Partial<SessionHistoryTurn> = {}): SessionHistoryTurn {
   return {
-    requestId: "req-1",
+    sessionId: "s1", requestId: "req-1",
     userSeq: 1,
     assistantSeq: 2,
     state: "completed",
@@ -467,6 +468,24 @@ it("marks only a failed first history load, and clears it when a retry succeeds"
       await store().loadHistory("s1")
       expect(store().historyFailed.s1).toBeUndefined()
       expect(store().history.s1).toEqual([])
+    },
+  )
+})
+
+it("tells the user when a harness exit drops prompts queued behind a finished turn", async () => {
+  let emit!: (event: HarnessEvent) => void
+  await withDesktopMock(
+    { subscribeHarnessEvents(listener: typeof emit) { emit = listener; return () => {} } },
+    () => {
+      const store = useChatStore.getState
+      store().subscribeHarness()
+      useToastStore.getState().dismissToast()
+      emit({ type: "chat.started", sessionId: "s1", requestId: "a", prompt: "first" })
+      emit({ type: "chat.queued", sessionId: "s1", requestId: "b", prompt: "second", queuePosition: 1 })
+      emit({ type: "chat.completed", sessionId: "s1", requestId: "a" })
+      emit({ type: "harness.exited" })
+      expect(store().queuedPrompts).toEqual({})
+      expect(useToastStore.getState().activeToast).toMatchObject({ type: "error", message: "The harness stopped. 1 waiting prompt(s) were lost." })
     },
   )
 })

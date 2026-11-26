@@ -34,19 +34,20 @@ export function listSessionHistory(db: Db, sessionId: string): SessionHistoryTur
     const next = rows[index + 1]
     // Same pairing as the harness replay (sqlite-turn-store rowsToHistoryTurns): a user row and the next assistant row
     if (current.role === "user" && next?.role === "assistant") {
-      turns.push(buildTurn(current, next))
+      turns.push(buildTurn(sessionId, current, next))
       index += 1
     } else {
-      turns.push(buildTurn(current, null))
+      turns.push(buildTurn(sessionId, current, null))
     }
   }
   return turns
 }
 
-function buildTurn(first: MessageRow, next: MessageRow | null): SessionHistoryTurn {
+function buildTurn(sessionId: string, first: MessageRow, next: MessageRow | null): SessionHistoryTurn {
   const user = first.role === "user" ? first : null
   const assistant = first.role === "assistant" ? first : next
   const identity = {
+    sessionId,
     requestId: assistant?.client_request_id ?? null,
     userSeq: user?.seq ?? null,
     assistantSeq: assistant?.seq ?? null,
@@ -118,6 +119,8 @@ function extractContentText(content: unknown, expectedType: "input_text" | "outp
     const record = item as Record<string, unknown>
     if (record.type === expectedType && typeof record.text === "string") {
       out.push(record.text)
+    } else if (expectedType === "output_text" && record.type === "refusal" && typeof record.refusal === "string") {
+      out.push(record.refusal)
     }
   }
 }

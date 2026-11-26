@@ -16,6 +16,7 @@ export interface SessionHistoryMedia {
 }
 
 export interface SessionHistoryTurn {
+  sessionId: string
   requestId: string | null
   userSeq: number | null
   assistantSeq: number | null
