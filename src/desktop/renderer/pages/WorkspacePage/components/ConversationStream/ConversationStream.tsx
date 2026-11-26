@@ -41,6 +41,10 @@ export function MediaPathRow({ path, name, problem, setProblem }: MediaPathRowPr
   )
 }
 
+function folderName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
 function Warnings({ warnings }: { warnings: readonly string[] }) {
   return warnings.map((warning, index) => (
     <div key={`${index}-${warning}`} className={styles.warningLine} role="status">
@@ -148,19 +152,20 @@ export function ConversationStream({
 
   return (
     <div className={styles.chatScrollArea}>
-      {historyTurns.map((turn) => (
+      {historyTurns.map((turn, index) => (
         <Fragment key={`${turn.userSeq}-${turn.assistantSeq}`}>
           {turn.prompt && (
             <div className={styles.msgUserRow}>
               <div className={styles.msgUserBubble}>{turn.prompt}</div>
             </div>
           )}
+          {/* The folder belongs to the prompt, shown only when it changes from the turn before */}
+          {turn.workspacePath && turn.workspacePath !== historyTurns[index - 1]?.workspacePath && (
+            <div className={styles.turnWorkspacePath} title={turn.workspacePath}>
+              Workspace: {folderName(turn.workspacePath)}
+            </div>
+          )}
           <div className={styles.msgAiRow}>
-            {turn.workspacePath && (
-              <div className={styles.turnWorkspacePath} title={turn.workspacePath}>
-                {turn.workspacePath}
-              </div>
-            )}
             {turn.assistantText && (
               <div className={styles.assistantCopyText}>{turn.assistantText}</div>
             )}

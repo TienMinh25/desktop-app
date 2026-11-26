@@ -43,7 +43,9 @@ test("renders stored turns in order, followed by unsettled history and the live 
     expect(position).toBeGreaterThan(previous)
     previous = position
   }
-  expect(html).toContain('title="/first">/first')
+  // Shown under the first prompt only, the second turn uses the same folder
+  expect(html).toContain('title="/first">Workspace: first')
+  expect(html.split('title="/first"').length - 1).toBe(1)
   for (const [glyph, tool, spoken] of [["✓", "read", "done"], ["✕", "edit", "failed"], ["○", "search", "not finished"]]) {
     expect(html).toContain(`<span aria-hidden="true">${glyph}</span> ${tool}<span>, ${spoken}</span>`)
   }
