@@ -65,35 +65,6 @@
   font-weight: 600;
 }
 
-.newChatButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 7px;
-  border: 1px solid rgba(59, 158, 255, 0.25);
-  border-radius: 6px;
-  color: #93c5fd;
-  background: rgba(0, 119, 238, 0.1);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-
-  :global([data-theme="light"]) & {
-    color: #0759ad;
-  }
-
-  &:hover {
-    color: #fff;
-    background: rgba(0, 119, 238, 0.22);
-    border-color: rgba(59, 158, 255, 0.45);
-
-    :global([data-theme="light"]) & {
-      color: #0759ad;
-    }
-  }
-}
-
 .searchBox {
   margin: 8px 2px 8px;
   position: relative;
@@ -141,7 +112,20 @@
 .projectEntryHead {
   display: flex;
   align-items: center;
+  gap: 4px;
   min-width: 0;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+
+  &:hover {
+    background: var(--item-hover-bg);
+  }
+
+  &.projectHeadActive {
+    background: var(--item-active-bg);
+    border-color: var(--item-active-border);
+  }
 }
 
 .projectSelect {
@@ -151,12 +135,69 @@
   align-items: center;
   gap: 8px;
   padding: 7px;
-  border: 1px solid transparent;
+  border: none;
   border-radius: 7px;
   color: $text-secondary;
   background: transparent;
   text-align: left;
   cursor: pointer;
+
+  &:hover {
+    color: $text-primary;
+  }
+
+  &.active {
+    color: var(--item-active-text);
+
+    .projectFolderIcon {
+      color: var(--accent-light);
+    }
+  }
+}
+
+.projectNewChatBtn {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: $text-secondary;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+
+  .projectEntryHead:hover &,
+  .projectEntryHead:focus-within & {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  &:hover {
+    background: var(--item-active-bg);
+    color: var(--item-active-text);
+  }
+}
+
+.seeMoreSessionsBtn {
+  width: 100%;
+  margin-top: 2px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease;
 
   &:hover {
     color: $text-primary;
@@ -185,7 +226,7 @@
 
 .treeSessionRow {
   min-width: 0;
-  height: 32px;
+  height: 34px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -253,23 +294,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12.5px;
-  line-height: 1.35;
+  line-height: 1.5;
 
   &.marqueeActive {
     width: max-content;
     overflow: visible;
     text-overflow: clip;
     will-change: transform;
-    animation: sessionTitleMarquee var(--marquee-duration, 2.2s) ease-in-out infinite alternate;
+    animation: sessionTitleMarquee var(--marquee-duration, 3.2s) linear 0.25s infinite alternate;
   }
 }
 
 @keyframes sessionTitleMarquee {
-  0%,
-  12% {
+  0% {
     transform: translateX(0);
   }
-  88%,
   100% {
     transform: translateX(var(--marquee-offset, 0px));
   }

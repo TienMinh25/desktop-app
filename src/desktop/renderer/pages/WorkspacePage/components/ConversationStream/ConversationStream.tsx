@@ -30,6 +30,14 @@ export function ConversationStream({
 }: ConversationStreamProps) {
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
   const [customAnswer, setCustomAnswer] = useState("")
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+
+  const handleCopyPrompt = () => {
+    void navigator.clipboard?.writeText(userPrompt).then(() => {
+      setCopiedPrompt(true)
+      window.setTimeout(() => setCopiedPrompt(false), 1200)
+    })
+  }
 
   const hasChoices = Boolean(question?.choices && question.choices.length > 0)
   const questionHeader = question
@@ -60,6 +68,34 @@ export function ConversationStream({
   return (
     <div className={styles.chatScrollArea}>
       <div className={styles.msgUserRow}>
+        <button
+          type="button"
+          className={`${styles.copyPromptBtn} ${copiedPrompt ? styles.copied : ""}`}
+          title={copiedPrompt ? "Copied" : "Copy prompt"}
+          aria-label={copiedPrompt ? "Copied" : "Copy prompt"}
+          onClick={handleCopyPrompt}
+        >
+          {copiedPrompt ? (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M3.5 8.5l3 3 6-6.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="5.5" y="5.5" width="7.5" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path
+                d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5.5A1.5 1.5 0 0 0 4 11h1.5"
+                stroke="currentColor"
+                strokeWidth="1.3"
+              />
+            </svg>
+          )}
+        </button>
         <div className={styles.msgUserBubble}>{userPrompt}</div>
       </div>
       <div className={styles.msgAiRow}>

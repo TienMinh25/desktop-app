@@ -3,6 +3,7 @@ import { formatGeneralErrorMessage } from "../../utils/error-message"
 import { toast } from "../app/toast.store"
 import { createAppStore } from "../create-store"
 import { QC_MOCK_SESSION_ID, useChatStore } from "./chat.store"
+import { usePromptSettingsStore } from "./prompt-settings.store"
 
 const PROJECT_ACTIONS = {
   LOADED: "projects/loaded",
@@ -125,7 +126,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
               loadError: error,
               assignedProjects: active.map(({ id, key, name }) => ({ id, key, name })),
               expandedProjects: Object.fromEntries(
-                active.map((project) => [project.id, state.expandedProjects[project.id] ?? true]),
+                active.map((project) => [project.id, state.expandedProjects[project.id] ?? false]),
               ),
               sessions: loaded,
               selectedProjectId: nextSelectedProjectId,
@@ -163,6 +164,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
 
     createNewChat: (projectId = get().selectedProjectId) => {
       if (!projectId || !isAssigned(projectId)) return
+      usePromptSettingsStore.getState().actions.clearSelectedFolder()
       set(
         { selectedProjectId: projectId, activeSessionId: null },
         false,
@@ -181,6 +183,7 @@ export const useProjectStore = createAppStore<ProjectStoreState>("ProjectStore",
             sessions: [toChatSession(row), ...state.sessions],
             selectedProjectId: projectId,
             activeSessionId: row.id,
+            expandedProjects: { ...state.expandedProjects, [projectId]: true },
           }),
           false,
           PROJECT_ACTIONS.CREATE_CHAT,
