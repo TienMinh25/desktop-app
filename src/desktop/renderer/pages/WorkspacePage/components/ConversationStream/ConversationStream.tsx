@@ -151,6 +151,45 @@ function QuestionCard({ question, onQuestionAnswer }: {
   )
 }
 
+function UserPrompt({ prompt }: { prompt: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyPrompt = () => {
+    void navigator.clipboard?.writeText(prompt).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    })
+  }
+
+  return (
+    <div className={styles.msgUserRow}>
+      <button
+        type="button"
+        className={`${styles.copyPromptBtn} ${copied ? styles.copied : ""}`}
+        title={copied ? "Copied" : "Copy prompt"}
+        aria-label={copied ? "Copied" : "Copy prompt"}
+        onClick={copyPrompt}
+      >
+        {copied ? (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="5.5" y="5.5" width="7.5" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+            <path
+              d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5.5A1.5 1.5 0 0 0 4 11h1.5"
+              stroke="currentColor"
+              strokeWidth="1.3"
+            />
+          </svg>
+        )}
+      </button>
+      <div className={styles.msgUserBubble}>{prompt}</div>
+    </div>
+  )
+}
+
 function TurnStatus({ message }: { message: string | null }) {
   if (!message) return null
   return <div className={styles.agentStatusLine} role={message === "Cancelled" ? "status" : undefined}>{message}</div>
@@ -164,9 +203,7 @@ function RuntimeTurn({ liveTurn, onPermissionDecision, onQuestionAnswer }: {
 
   return (
     <>
-      <div className={styles.msgUserRow}>
-        <div className={styles.msgUserBubble}>{liveTurn.prompt}</div>
-      </div>
+      <UserPrompt prompt={liveTurn.prompt} />
       <div className={styles.msgAiRow}>
         <div className={styles.assistantCopyText}>
           {liveTurn.assistantText || (liveTurn.isStreaming ? "Thinking…" : "")}
@@ -210,9 +247,7 @@ export function ConversationStream({
       {historyTurns.map((turn, index) => (
         <Fragment key={`${turn.userSeq}-${turn.assistantSeq}`}>
           {turn.prompt && (
-            <div className={styles.msgUserRow}>
-              <div className={styles.msgUserBubble}>{turn.prompt}</div>
-            </div>
+            <UserPrompt prompt={turn.prompt} />
           )}
           {/* The folder belongs to the prompt, shown only when it changes from the turn before */}
           {turn.workspacePath && turn.workspacePath !== historyTurns[index - 1]?.workspacePath && (

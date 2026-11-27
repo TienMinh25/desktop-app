@@ -14,6 +14,10 @@ export const SIDEBAR_SEARCH_CONFIG = {
   DEBOUNCE_MS: 150,
 } as const
 
+export const SIDEBAR_TREE_CONFIG = {
+  DEFAULT_VISIBLE_SESSIONS: 10,
+} as const
+
 export const SIDEBAR_LAYOUT = {
   DEFAULT_WIDTH: 250,
   MIN_WIDTH: 210,
