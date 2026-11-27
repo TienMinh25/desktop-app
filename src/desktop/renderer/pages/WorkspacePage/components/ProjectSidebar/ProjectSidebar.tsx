@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
 import type { SidebarSearchResult } from "../../../../../../contracts/projects"
+import { SIDEBAR_SEARCH_CONFIG, SIDEBAR_TREE_CONFIG } from "../../../../constants"
+import { ConfirmModal } from "../../../../components/ui/ConfirmModal/ConfirmModal"
 import { useClickOutside } from "../../../../hooks/useClickOutside"
+import { splitHighlightParts } from "../../../../utils/text"
 import {
   newestFirst,
   useChatStore,
@@ -22,24 +25,21 @@ export function ProjectSidebar() {
   const sessions = useProjectStore((state) => state.sessions)
   const activeSessionId = useProjectStore((state) => state.activeSessionId)
   const expandedProjects = useProjectStore((state) => state.expandedProjects)
-  const selectProject = useProjectStore((state) => state.selectProject)
-  const toggleExpandProject = useProjectStore((state) => state.toggleExpandProject)
-  const selectSession = useProjectStore((state) => state.selectSession)
-  const createNewChat = useProjectStore((state) => state.createNewChat)
-  const renameSession = useProjectStore((state) => state.renameSession)
-  const deleteSession = useProjectStore((state) => state.deleteSession)
+  const { selectProject, toggleExpandProject, selectSession, createNewChat, renameSession, deleteSession } =
+    useProjectStore((state) => state.actions)
 
   const isCustomizeActive = useCustomizeStore((state) => state.isOpen)
-  const openCustomize = useCustomizeStore((state) => state.openCustomize)
-  const closeCustomize = useCustomizeStore((state) => state.closeCustomize)
+  const { openCustomize, closeCustomize } = useCustomizeStore((state) => state.actions)
 
-  const clearSessionRuntime = useChatStore((state) => state.clearSessionRuntime)
+  const clearSessionRuntime = useChatStore((state) => state.actions.clearSessionRuntime)
 
   const displaySelectedProjectId = isCustomizeActive ? null : selectedProjectId
   const displayActiveSessionId = isCustomizeActive ? null : activeSessionId
   const [searchQuery, setSearchQuery] = useState("")
   const [openMenuSession, setOpenMenuSession] = useState<SessionMenuState | null>(null)
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null)
+  const [expandedSessionLists, setExpandedSessionLists] = useState<Record<string, boolean>>({})
   const sessionMenuRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(sessionMenuRef, () => setOpenMenuSession(null))
@@ -52,7 +52,7 @@ export function ProjectSidebar() {
     let stale = false
     const timer = setTimeout(() => {
       window.desktop.searchSidebar(query).then((result) => !stale && setHits(result)).catch(() => !stale && setHits(null))
-    }, 150)
+    }, SIDEBAR_SEARCH_CONFIG.DEBOUNCE_MS)
     return () => {
       stale = true
       clearTimeout(timer)
@@ -72,7 +72,8 @@ export function ProjectSidebar() {
 
     const overflowWidth = titleEl.scrollWidth - copyEl.clientWidth
     if (overflowWidth > 2) {
-      const durationSec = Math.max(1.6, Math.min(4.5, overflowWidth / 32))
+      // Constant ~28px/s reading speed regardless of title length
+      const durationSec = Math.max(2.8, overflowWidth / 28)
       titleEl.style.setProperty("--marquee-offset", `-${overflowWidth}px`)
       titleEl.style.setProperty("--marquee-duration", `${durationSec}s`)
       titleEl.classList.add(marqueeClass)
@@ -106,27 +107,6 @@ export function ProjectSidebar() {
 
       <div className={styles.sectionHead}>
         <span>Projects</span>
-        <button
-          className={styles.newChatButton}
-          type="button"
-          onClick={() => {
-            // Clear search so the new chat is visible
-            setSearchQuery("")
-            closeCustomize()
-            void createNewChat(selectedProjectId)
-          }}
-          title="Start a new chat in the active project"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M8 3v10M3 8h10"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span>New chat</span>
-        </button>
       </div>
 
       <div className={styles.searchBox}>
@@ -170,16 +150,23 @@ export function ProjectSidebar() {
               .filter((s) => !searching || projectHit(project.id) || sessionHit(s))
             if (searching && !projectHit(project.id) && projectSessions.length === 0) return null
 
+            const hasMoreSessions =
+              !searching && projectSessions.length > SIDEBAR_TREE_CONFIG.DEFAULT_VISIBLE_SESSIONS
+            const showAllSessions = Boolean(expandedSessionLists[project.id])
+            const visibleSessions =
+              hasMoreSessions && !showAllSessions
+                ? projectSessions.slice(0, SIDEBAR_TREE_CONFIG.DEFAULT_VISIBLE_SESSIONS)
+                : projectSessions
+
             return (
               <section
                 key={project.id}
                 className={`${styles.projectEntry} ${isExpanded ? styles.expanded : ""}`}
               >
-                <div className={styles.projectEntryHead}>
+                <div className={`${styles.projectEntryHead} ${isSelected ? styles.projectHeadActive : ""}`}>
                   <button
                     type="button"
                     className={`${styles.projectSelect} ${isSelected ? styles.active : ""}`}
-                    title={`Open ${project.name}`}
                     aria-expanded={isExpanded}
                     onClick={() => {
                       closeCustomize()
@@ -225,7 +212,38 @@ export function ProjectSidebar() {
                         />
                       </svg>
                     )}
-                    <span className={styles.projectName}>{highlight(project.name, query)}</span>
+                    <span className={styles.projectName}>
+                      {splitHighlightParts(project.name, query).map((part, idx) =>
+                        part.isMatch ? (
+                          <mark key={idx} className={styles.searchMark}>
+                            {part.text}
+                          </mark>
+                        ) : (
+                          part.text
+                        ),
+                      )}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.projectNewChatBtn}
+                    title={`New chat in ${project.name}`}
+                    aria-label={`New chat in ${project.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSearchQuery("")
+                      closeCustomize()
+                      createNewChat(project.id)
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M8 3v10M3 8h10"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   </button>
                 </div>
 
@@ -234,7 +252,8 @@ export function ProjectSidebar() {
                     {projectSessions.length === 0 ? (
                       <div className={styles.sidebarEmpty}>No chats in this project.</div>
                     ) : (
-                      projectSessions.map((session) => {
+                      <>
+                        {visibleSessions.map((session) => {
                         const isSessionActive = session.id === displayActiveSessionId
                         const isMenuOpen = openMenuSession?.sessionId === session.id
                         return (
@@ -243,7 +262,6 @@ export function ProjectSidebar() {
                             className={`${styles.treeSessionRow} ${
                               isSessionActive || isMenuOpen ? styles.active : ""
                             }`}
-                            title={`${session.title} · ${project.name}`}
                             onClick={() => {
                               closeCustomize()
                               selectSession(session.id)
@@ -275,7 +293,15 @@ export function ProjectSidebar() {
                                 />
                               ) : (
                                 <span className={styles.treeSessionTitle}>
-                                  {highlight(session.title, query)}
+                                  {splitHighlightParts(session.title, query).map((part, idx) =>
+                                    part.isMatch ? (
+                                      <mark key={idx} className={styles.searchMark}>
+                                        {part.text}
+                                      </mark>
+                                    ) : (
+                                      part.text
+                                    ),
+                                  )}
                                 </span>
                               )}
                             </span>
@@ -314,7 +340,22 @@ export function ProjectSidebar() {
                             </span>
                           </div>
                         )
-                      })
+                      })}
+                        {hasMoreSessions && (
+                          <button
+                            type="button"
+                            className={styles.seeMoreSessionsBtn}
+                            onClick={() =>
+                              setExpandedSessionLists((prev) => ({
+                                ...prev,
+                                [project.id]: !showAllSessions,
+                              }))
+                            }
+                          >
+                            {showAllSessions ? "See less" : `See all (${projectSessions.length})`}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -359,9 +400,7 @@ export function ProjectSidebar() {
             onClick={() => {
               const targetId = openMenuSession.sessionId
               setOpenMenuSession(null)
-              void deleteSession(targetId).then((deleted) => {
-                if (deleted) clearSessionRuntime(targetId)
-              })
+              setPendingDeleteSessionId(targetId)
             }}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -377,14 +416,24 @@ export function ProjectSidebar() {
           </button>
         </div>
       )}
-    </div>
-  )
-}
 
-function highlight(text: string, query: string | undefined) {
-  if (!query) return text
-  const pattern = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi")
-  return text.split(pattern).map((part, index) =>
-    index % 2 ? <mark key={index} className={styles.searchMark}>{part}</mark> : part,
+      {pendingDeleteSessionId && (
+        <ConfirmModal
+          title="Delete chat"
+          message="Are you sure you want to delete this chat session?"
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => {
+            const targetId = pendingDeleteSessionId
+            setPendingDeleteSessionId(null)
+            void deleteSession(targetId).then((deleted) => {
+              if (deleted) clearSessionRuntime(targetId)
+            })
+          }}
+          onCancel={() => setPendingDeleteSessionId(null)}
+        />
+      )}
+    </div>
   )
 }

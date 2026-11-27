@@ -6,6 +6,7 @@ it("exposes the command discriminants from the shared contract", () => {
   expect(HARNESS_COMMAND_TYPES).toEqual({
     PING: "app.ping",
     CHAT_SUBMIT: "chat.submit",
+    CHAT_CANCEL: "chat.cancel",
     SESSION_DELETE: "session.delete",
     PERMISSION_RESPOND: "permission.respond",
     QUESTION_RESPOND: "question.respond",

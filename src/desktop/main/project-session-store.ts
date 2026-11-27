@@ -51,9 +51,24 @@ export function renameSession(db: Db, id: string, title: string): void {
   db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(title, id)
 }
 
-// Hard delete, ON DELETE CASCADE also removes the chat's messages, config and links
-export function deleteSession(db: Db, id: string): void {
-  db.prepare("DELETE FROM sessions WHERE id = ?").run(id)
+export class SessionRunningError extends Error {
+  constructor(readonly sessionId: string) {
+    super("Cannot delete a session while a turn is running.")
+    this.name = "SessionRunningError"
+  }
+}
+
+export function deleteSession(db: Db, id: string, options: { harnessAlive: boolean }): void {
+  db.transaction(() => {
+    if (options.harnessAlive) {
+      const running = db.prepare(`
+        SELECT 1 FROM messages
+        WHERE session_id = ? AND role = 'assistant' AND state = 'running'`).get(id)
+      if (running) throw new SessionRunningError(id)
+    }
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(id)
+    pruneOrphanBlobs(db)
+  }).immediate()
 }
 
 // shortcut: SQLite lower() folds ASCII only, "Đ" will not match "đ", add a folded column if users need it
@@ -65,4 +80,13 @@ export function searchSidebar(db: Db, query: string): SidebarSearchResult {
     SELECT s.id FROM sessions AS s JOIN projects AS p ON p.id = s.project_id
     WHERE p.is_assigned = 1 AND instr(lower(s.title), lower(?)) > 0`).all(query) as Array<{ id: string }>
   return { projectIds: projectIds.map((row) => row.id), sessionIds: sessionIds.map((row) => row.id) }
+}
+
+// Session delete cascades to artifacts, so blobs no artifact references any more are removed in the same transaction
+function pruneOrphanBlobs(db: Db): number {
+  return db.prepare(`
+    DELETE FROM media_blob
+    WHERE NOT EXISTS (
+      SELECT 1 FROM artifacts WHERE artifacts.sha256 = media_blob.sha256
+    )`).run().changes
 }

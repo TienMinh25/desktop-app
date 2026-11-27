@@ -53,8 +53,8 @@ body,
 #root {
   height: 100%;
   width: 100%;
-  background: #0c0c0d;
-  color: #e2e8f0;
+  background: $bg-primary;
+  color: $text-body;
   font-family: $font-sans;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;

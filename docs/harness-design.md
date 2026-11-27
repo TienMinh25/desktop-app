@@ -24,7 +24,7 @@ Electron main
   │ UtilityProcess.postMessage / UtilityProcess message event
   ▼
 Harness utility process
-  ├─ InMemoryConversationStore
+  ├─ SqliteTurnStore (ccodex.db, opened from CCODEX_DB_PATH)
   ├─ HarnessRuntime → AgentLoop → ToolRegistry → PermissionManager
   │                                      └→ tool executor → ExecutionEnvironment
   └─ BackendHttpClient ── HTTP/SSE + Authorization: Bearer <access_token> ──► BACKEND_HOST/api/v1/chat/responses
@@ -222,7 +222,7 @@ Hiện chưa triển khai electron-builder config, signing, CI release workflow,
 
 ## Ranh giới lưu hội thoại
 
-`ConversationStore` cung cấp `getMessages(sessionId)` và `saveMessages(sessionId, messages)`. `InMemoryConversationStore` hiện là adapter và clone message array tại ranh giới interface. Harness server chỉ lưu sau khi agent run thành công. Khởi động lại process sẽ xóa lịch sử. Khi chủ dự án cung cấp schema SQLite, hãy viết adapter SQLite sau interface này; không để API agent/tool phụ thuộc vào bảng SQL.
+`TurnStore` lưu mỗi turn thành một dòng user và một dòng assistant trong SQLite: `beginTurn` ghi hai dòng (assistant ở trạng thái `running`), `appendSteps` ghi lô tool call trước khi chạy tool và ghi từng output ngay sau đó, `finishTurn` ghi lô cuối và trạng thái `completed` hoặc `failed`. Khi harness khởi động, `recoverInterrupted` chuyển turn còn `running` thành `interrupted`. Adapter `SqliteTurnStore` dùng cho app, `InMemoryTurnStore` dùng cho test; API agent/tool không phụ thuộc vào bảng SQL.
 
 `PermissionManager` và bước parse permission rule nằm trong `src/harness/permissions/`. Thư mục `agent` mô tả việc điều phối model/tool; `permissions` mô tả policy cấp quyền và chờ quyết định của người dùng. `PermissionRequirement` là ý định permission của tool trước khi runtime gắn request/session ID; `PermissionRequest` là yêu cầu đã có đầy đủ định danh gửi qua luồng duyệt UI.
 

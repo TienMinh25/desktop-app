@@ -1,4 +1,5 @@
 import { useState, type PointerEvent, type ReactNode } from "react"
+import { SIDEBAR_LAYOUT } from "../../../constants"
 import { SidebarFooter } from "../SidebarFooter/SidebarFooter"
 import styles from "./Sidebar.module.scss"
 
@@ -7,12 +8,8 @@ interface SidebarProps {
   children: ReactNode
 }
 
-const DEFAULT_SIDEBAR_WIDTH = 250
-const MIN_SIDEBAR_WIDTH = 210
-const MAX_SIDEBAR_WIDTH = 420
-
 export function Sidebar({ role, children }: SidebarProps) {
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_LAYOUT.DEFAULT_WIDTH)
   const [isResizing, setIsResizing] = useState(false)
 
   const handleResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -24,8 +21,8 @@ export function Sidebar({ role, children }: SidebarProps) {
   const handleResizePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!isResizing) return
     const clampedWidth = Math.min(
-      MAX_SIDEBAR_WIDTH,
-      Math.max(MIN_SIDEBAR_WIDTH, event.clientX),
+      SIDEBAR_LAYOUT.MAX_WIDTH,
+      Math.max(SIDEBAR_LAYOUT.MIN_WIDTH, event.clientX),
     )
     setSidebarWidth(clampedWidth)
   }

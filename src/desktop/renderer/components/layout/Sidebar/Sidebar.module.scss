@@ -5,6 +5,8 @@
   max-width: 420px;
   flex-shrink: 0;
   background: $bg-secondary;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-right: 1px solid $border-subtle;
   display: flex;
   flex-direction: column;

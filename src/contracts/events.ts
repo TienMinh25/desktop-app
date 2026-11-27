@@ -10,6 +10,14 @@ export interface PongEvent extends BaseEvent {
   type: typeof HARNESS_EVENT_TYPES.PONG
 }
 
+export interface HarnessReadyEvent {
+  type: typeof HARNESS_EVENT_TYPES.HARNESS_READY
+}
+
+export interface HarnessExitedEvent {
+  type: typeof HARNESS_EVENT_TYPES.HARNESS_EXITED
+}
+
 export interface AssistantDeltaEvent extends SessionEvent {
   type: typeof HARNESS_EVENT_TYPES.ASSISTANT_DELTA
   text: string
@@ -32,6 +40,12 @@ export interface ChatStartedEvent extends SessionEvent {
 
 export interface ChatFailedEvent extends SessionEvent {
   type: typeof HARNESS_EVENT_TYPES.CHAT_FAILED
+  prompt: string
+  message: string
+}
+
+export interface ContextWarningEvent extends SessionEvent {
+  type: typeof HARNESS_EVENT_TYPES.CONTEXT_WARNING
   message: string
 }
 
@@ -87,4 +101,4 @@ export interface ToolFailedEvent extends SessionEvent {
   message: string
 }
 
-export type HarnessEvent = PongEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatQueuedEvent | ChatStartedEvent | ChatFailedEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent
+export type HarnessEvent = PongEvent | HarnessReadyEvent | HarnessExitedEvent | AssistantDeltaEvent | ChatCompletedEvent | ChatQueuedEvent | ChatStartedEvent | ChatFailedEvent | ContextWarningEvent | PermissionRequiredEvent | PermissionExpiredEvent | QuestionRequiredEvent | QuestionExpiredEvent | TodoUpdatedEvent | ToolStartedEvent | ToolCompletedEvent | ToolFailedEvent

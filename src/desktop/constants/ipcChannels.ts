@@ -27,6 +27,11 @@ export const IPC_CHANNELS = {
   SESSIONS_CREATE: "sessions:create",
   SESSIONS_RENAME: "sessions:rename",
   SESSIONS_DELETE: "sessions:delete",
+  SESSIONS_HISTORY: "sessions:history",
+  MEDIA_OPEN_PATH: "media:open-path",
   SIDEBAR_SEARCH: "sidebar:search",
   APP_LOG_EVENT: "app:log-event",
+  DEBUG_OPEN_LOG_WINDOW: "debug:open-log-window",
+  DEBUG_GET_LOG_HISTORY: "debug:get-log-history",
+  DEBUG_CLEAR_LOGS: "debug:clear-logs",
 } as const

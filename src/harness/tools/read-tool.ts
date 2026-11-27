@@ -10,10 +10,12 @@ type MediaDescriptor =
   | { kind: "image"; mimeType: string; label: string }
   | { kind: "file"; mimeType: string; label: string }
 
+const OFFICE_EXTENSIONS = new Set([".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"])
+
 export const readTool: HarnessTool = {
   definition: definition(
     "read",
-    `Read UTF-8 text/code; PNG, JPG/JPEG, static GIF, WebP; PDF, DOC/DOCX, XLS/XLSX, CSV, and PPT/PPTX. Text pages contain at most ${READ_LIMITS.pageLines} lines and ${READ_LIMITS.pageBytes} bytes. UTF-8 files are limited to ${READ_LIMITS.textFileBytes} bytes; images/documents are limited to ${READ_LIMITS.mediaFileBytes} bytes each. Use offset and columnOffset to continue text pages. Files outside the workspace and sensitive files require approval.`,
+    `Read UTF-8 text/code (including CSV); PNG, JPG/JPEG, static GIF, WebP; and PDF when supported by the current model. Office files (DOC/DOCX, XLS/XLSX, PPT/PPTX) are not supported yet. Text pages contain at most ${READ_LIMITS.pageLines} lines and ${READ_LIMITS.pageBytes} bytes. UTF-8 files are limited to ${READ_LIMITS.textFileBytes} bytes; images/PDFs are limited to ${READ_LIMITS.mediaFileBytes} bytes each. Use offset and columnOffset to continue text pages. Files outside the workspace and sensitive files require approval.`,
     {
       path: { type: "string", description: "Workspace-relative or absolute file path" },
       offset: { type: "integer", minimum: 0, description: "Zero-based line offset; defaults to 0" },
@@ -53,12 +55,17 @@ export const readTool: HarnessTool = {
       paginationRequested: boolean
     }
     const extension = extname(resolved.path).toLowerCase()
+    if (OFFICE_EXTENSIONS.has(extension)) {
+      return `Reading ${extension} files is not supported yet. Convert the file to PDF or text first.`
+    }
     const media = mediaForExtension(extension)
 
-    // if this file is text/utf-8 -> we read text file page
     if (!media) {
       const page = await context.environment.readTextFilePage(resolved.path, resolved.insideWorkspace, offset, limit, columnOffset)
       return renderTextPage(page, offset, columnOffset)
+    }
+    if (context.mediaInput === false) {
+      return `The current model does not support reading ${media.label} files.`
     }
     if (paginationRequested) throw new Error("offset, columnOffset, and limit can only be used with UTF-8 text files")
 
@@ -94,18 +101,8 @@ function mediaForExtension(extension: string): MediaDescriptor | undefined {
     ".gif": { mimeType: "image/gif", label: "static GIF image" },
     ".webp": { mimeType: "image/webp", label: "WebP image" },
   }
-  const documents: Record<string, { mimeType: string; label: string }> = {
-    ".csv": { mimeType: "text/csv", label: "CSV spreadsheet" },
-    ".pdf": { mimeType: "application/pdf", label: "PDF document" },
-    ".doc": { mimeType: "application/msword", label: "Word document" },
-    ".docx": { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", label: "Word document" },
-    ".xls": { mimeType: "application/vnd.ms-excel", label: "Excel spreadsheet" },
-    ".xlsx": { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", label: "Excel spreadsheet" },
-    ".ppt": { mimeType: "application/vnd.ms-powerpoint", label: "PowerPoint presentation" },
-    ".pptx": { mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", label: "PowerPoint presentation" },
-  }
   if (images[extension]) return { kind: "image", ...images[extension] }
-  if (documents[extension]) return { kind: "file", ...documents[extension] }
+  if (extension === ".pdf") return { kind: "file", mimeType: "application/pdf", label: "PDF document" }
   return undefined
 }
 
@@ -123,22 +120,9 @@ function validateMediaBytes(extension: string, media: MediaDescriptor, bytes: Bu
     return
   }
 
-  if (extension === ".csv") {
-    assertUtf8(bytes)
-    return
-  }
   if (extension === ".pdf") {
     if (bytes.subarray(0, 1024).indexOf(Buffer.from("%PDF-")) < 0) throw mismatchedExtension(extension)
-    return
   }
-  if (extension === ".doc" || extension === ".xls" || extension === ".ppt") {
-    if (!hasPrefix(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) throw mismatchedExtension(extension)
-    return
-  }
-
-  if (!hasPrefix(bytes, [0x50, 0x4b, 0x03, 0x04])) throw mismatchedExtension(extension)
-  const requiredEntry = extension === ".docx" ? "word/document.xml" : extension === ".xlsx" ? "xl/workbook.xml" : "ppt/presentation.xml"
-  if (!zipHasEntry(bytes, requiredEntry)) throw new Error(`File content is not a valid ${extension} package (missing ${requiredEntry})`)
 }
 
 function countGifFrames(bytes: Buffer): number {
@@ -178,39 +162,6 @@ function skipGifSubBlocks(bytes: Buffer, start: number): number {
     if (position > bytes.length) throw new Error("GIF file is malformed")
   }
   throw new Error("GIF file is malformed")
-}
-
-function zipHasEntry(bytes: Buffer, expectedName: string): boolean {
-  const searchStart = Math.max(0, bytes.length - 65_557)
-  let endRecord = -1
-  for (let index = bytes.length - 22; index >= searchStart; index -= 1) {
-    if (bytes.readUInt32LE(index) === 0x06054b50) { endRecord = index; break }
-  }
-  if (endRecord < 0) return false
-  let position = bytes.readUInt32LE(endRecord + 16)
-  const directoryEnd = position + bytes.readUInt32LE(endRecord + 12)
-  if (directoryEnd > bytes.length) return false
-  while (position + 46 <= directoryEnd && bytes.readUInt32LE(position) === 0x02014b50) {
-    const nameLength = bytes.readUInt16LE(position + 28)
-    const extraLength = bytes.readUInt16LE(position + 30)
-    const commentLength = bytes.readUInt16LE(position + 32)
-    const nameStart = position + 46
-    const nameEnd = nameStart + nameLength
-    if (nameEnd > directoryEnd) return false
-    if (bytes.toString("utf8", nameStart, nameEnd) === expectedName) return true
-    position = nameEnd + extraLength + commentLength
-  }
-  return false
-}
-
-function assertUtf8(bytes: Buffer) {
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-    if (text.includes("\0")) throw new Error("CSV contains binary data")
-  } catch (error) {
-    if (error instanceof Error && error.message === "CSV contains binary data") throw error
-    throw new Error("CSV must be UTF-8 encoded")
-  }
 }
 
 function hasPrefix(bytes: Buffer, signature: number[]): boolean {

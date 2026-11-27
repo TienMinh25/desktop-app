@@ -1,11 +1,31 @@
 import { useEffect } from "react"
 import { MainLayout } from "../../components/layout/MainLayout/MainLayout"
-import { toast, useChatStore, useCustomizeStore, useProjectStore } from "../../stores"
+import {
+  resolveHistoryTurns,
+  toast,
+  useChatStore,
+  useCustomizeStore,
+  useProjectStore,
+} from "../../stores"
 import { ConversationStream } from "./components/ConversationStream/ConversationStream"
 import { CustomizePanel } from "./components/CustomizePanel/CustomizePanel"
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar"
 import { PromptBar } from "./components/PromptBar/PromptBar"
 import styles from "./WorkspacePage.module.scss"
+
+/** Which chat pane to show: the stream, a failed first load, nothing while loading, or the greeting. */
+export function chatPaneView(input: {
+  hasContent: boolean
+  activeSessionId: string | null
+  historyLoaded: boolean
+  historyFailed: boolean
+}): "stream" | "failed" | "loading" | "greeting" {
+  if (input.hasContent) return "stream"
+  if (input.historyFailed) return "failed"
+  // Wait for the history load so an old session does not flash the greeting
+  if (input.activeSessionId !== null && !input.historyLoaded) return "loading"
+  return "greeting"
+}
 
 export function WorkspacePage() {
   const loadError = useProjectStore((state) => state.loadError)
@@ -13,16 +33,17 @@ export function WorkspacePage() {
   const sessions = useProjectStore((state) => state.sessions)
   const activeSessionId = useProjectStore((state) => state.activeSessionId)
 
-  const turns = useChatStore((state) => state.turns)
-  const queuedPrompts = useChatStore((state) => state.queuedPrompts)
-  const subscribeHarness = useChatStore((state) => state.subscribeHarness)
-  const respondToPermission = useChatStore((state) => state.respondToPermission)
-  const respondToQuestion = useChatStore((state) => state.respondToQuestion)
+  const turn = useChatStore((state) => activeSessionId === null ? undefined : state.turns[activeSessionId])
+  const queue = useChatStore((state) => activeSessionId === null ? undefined : state.queuedPrompts[activeSessionId])
+  const history = useChatStore((state) => activeSessionId === null ? undefined : state.history[activeSessionId])
+  const retiredTurns = useChatStore((state) => activeSessionId === null ? undefined : state.retiredTurns[activeSessionId])
+  const historyFailed = useChatStore((state) => activeSessionId !== null && Boolean(state.historyFailed[activeSessionId]))
+  const pendingTurns = useChatStore((state) => activeSessionId === null ? undefined : state.pendingHistoryTurns[activeSessionId])
+  const { loadHistory, subscribeHarness, respondToPermission, respondToQuestion } = useChatStore((state) => state.actions)
 
   const isCustomizeOpen = useCustomizeStore((state) => state.isOpen)
   const hasEnabledLspServer = useCustomizeStore((state) => state.hasEnabledLspServer)
-  const openCustomize = useCustomizeStore((state) => state.openCustomize)
-  const refreshLspStatus = useCustomizeStore((state) => state.refreshLspStatus)
+  const { openCustomize, refreshLspStatus } = useCustomizeStore((state) => state.actions)
 
   const activeSession = sessions.find(
     (s) => s.id === activeSessionId && s.projectId === selectedProjectId,
@@ -38,8 +59,13 @@ export function WorkspacePage() {
     void refreshLspStatus()
   }, [refreshLspStatus])
 
-  const turn = activeSessionId === null ? undefined : turns[String(activeSessionId)]
-  const activeQueue = activeSessionId === null ? [] : queuedPrompts[String(activeSessionId)] ?? []
+  const visibleHistory = resolveHistoryTurns(history ?? [], turn, pendingTurns)
+  const pane = chatPaneView({
+    hasContent: Boolean(turn) || Boolean(queue?.length) || Boolean(pendingTurns?.length) || visibleHistory.length > 0,
+    activeSessionId,
+    historyLoaded: history !== undefined,
+    historyFailed,
+  })
 
   return (
     <MainLayout sidebarContent={<ProjectSidebar />}>
@@ -47,32 +73,31 @@ export function WorkspacePage() {
         <CustomizePanel />
       ) : (
         <>
-          {turn || activeQueue.length > 0 || activeSession?.hasHistory ? (
+          {pane === "stream" ? (
             <>
               <div className={styles.chatTopHeader}>
                 <span>{activeSession?.title ?? "New chat"}</span>
               </div>
-              {turn ? (
-                <ConversationStream
-                  userPrompt={turn.prompt}
-                  assistantText={turn.assistantText}
-                  isStreaming={turn.isStreaming}
-                  error={turn.error}
-                  permission={turn.permission}
-                  question={turn.question}
-                  todos={turn.todos}
-                  pendingPrompts={activeQueue}
-                  toolStatus={turn.toolStatus}
-                  onPermissionDecision={(id, decision) =>
-                    respondToPermission(turn.sessionId, turn.requestId, id, decision)
-                  }
-                  onQuestionAnswer={(id, answer) =>
-                    respondToQuestion(turn.sessionId, turn.requestId, id, answer)
-                  }
-                />
-              ) : null}
+              <ConversationStream
+                key={activeSessionId ?? undefined}
+                historyTurns={visibleHistory}
+                retiredTurns={retiredTurns}
+                pendingHistoryTurns={pendingTurns}
+                liveTurn={turn}
+                onPermissionDecision={(id, decision) => {
+                  if (turn) respondToPermission(turn.sessionId, turn.requestId, id, decision)
+                }}
+                onQuestionAnswer={(id, answer) => {
+                  if (turn) respondToQuestion(turn.sessionId, turn.requestId, id, answer)
+                }}
+              />
             </>
-          ) : (
+          ) : pane === "failed" ? (
+            <div className={styles.centerGreeting} role="alert">
+              <p>Could not load this chat.</p>
+              <button type="button" onClick={() => void loadHistory(activeSessionId)}>Retry</button>
+            </div>
+          ) : pane === "loading" ? null : (
             <div className={styles.centerGreeting}>
               <svg
                 className={styles.cloudIcon}

@@ -4,7 +4,7 @@ import { useAuthStore } from "../../stores"
 import styles from "./NoProjectPage.module.scss"
 
 export function NoProjectPage() {
-  const openSignOutConfirm = useAuthStore((state) => state.openSignOutConfirm)
+  const { openSignOutConfirm } = useAuthStore((state) => state.actions)
 
   const sidebarContent = (
     <div className={styles.sidebarSection}>

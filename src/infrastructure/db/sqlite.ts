@@ -13,10 +13,18 @@ export function openDb(ccodexDirectory: string): Db {
   return db
 }
 
+export interface ConnectionOptions {
+  synchronous?: "NORMAL" | "FULL"
+}
+
 // These pragmas hold per connection, so every process runs them on every open
-// WAL + busy_timeout let main and harness use the file at the same time, foreign_keys makes ON DELETE CASCADE work
-export function configureConnection(db: Db): void {
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")
+// busy_timeout runs first so WAL acquisition waits instead of failing immediately
+export function configureConnection(db: Db, options: ConnectionOptions = {}): void {
+  const synchronous = options.synchronous ?? "NORMAL"
+  if (synchronous !== "NORMAL" && synchronous !== "FULL") {
+    throw new Error(`Unsupported SQLite synchronous mode: ${String(synchronous)}`)
+  }
+  db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = ${synchronous}; PRAGMA foreign_keys = ON;`)
 }
 
 // Only main calls this, once at startup before the harness opens the DB

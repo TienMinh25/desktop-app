@@ -1,7 +1,8 @@
 import type { McpConnectorItem } from "../../../../../../../contracts/mcp-registry"
 import styles from "../CustomizePanel.module.scss"
 import { ConnectorCard } from "./ConnectorCard"
-import { ConnectorIcon, formatAddedDate, VerifiedBadge } from "./ConnectorIcon"
+import { formatAddedDate } from "../../../../../utils/text"
+import { ConnectorIcon, VerifiedBadge } from "./ConnectorIcon"
 
 interface ConnectorDetailViewProps {
   connector: McpConnectorItem

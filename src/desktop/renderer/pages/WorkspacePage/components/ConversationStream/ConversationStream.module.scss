@@ -22,6 +22,42 @@
 .msgUserRow {
   display: flex;
   justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+
+  &:hover .copyPromptBtn,
+  &:focus-within .copyPromptBtn {
+    opacity: 1;
+  }
+}
+
+.copyPromptBtn {
+  width: 28px;
+  height: 28px;
+  margin-top: 6px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid $border-color;
+  background: $bg-surface;
+  color: $text-secondary;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--item-hover-bg);
+    color: $text-primary;
+  }
+
+  &.copied {
+    opacity: 1;
+    color: $success;
+    border-color: rgba(16, 185, 129, 0.35);
+  }
 }
 
 .msgUserBubble {
@@ -33,6 +69,7 @@
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--user-bubble-text);
+  user-select: text;
 }
 
 .msgAiRow {
@@ -88,48 +125,209 @@
 .questionCard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 680px;
-  padding: 14px;
+  gap: 14px;
+  max-width: 720px;
+  padding: 18px 20px;
   border: 1px solid $border-color;
-  border-radius: 10px;
+  border-radius: 16px;
   background: $bg-surface;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 38px rgba(0, 0, 0, 0.35);
   color: $text-body;
-  font-size: 12.5px;
+  font-size: 13px;
+
+  :global([data-theme="light"]) & {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  }
 }
 
-.questionChoices,
+.questionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.questionIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--item-active-bg);
+  border: 1px solid var(--item-active-border);
+  color: var(--accent-light);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.questionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text-primary;
+  letter-spacing: -0.01em;
+}
+
+.questionDescription {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: $text-secondary;
+}
+
+.questionChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.questionOptionCard {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid $border-color;
+  background: $bg-secondary;
+  color: $text-body;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease;
+
+  &:hover {
+    border-color: var(--accent-primary);
+    background: var(--item-hover-bg);
+  }
+
+  &:focus-within {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+
+  &.questionOptionSelected {
+    border-color: var(--accent-primary);
+    background: var(--item-active-bg);
+    box-shadow: 0 0 0 1px var(--accent-primary);
+  }
+}
+
+.questionRadio {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid $text-muted;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.14s ease;
+
+  .questionOptionSelected & {
+    border-color: var(--accent-primary);
+  }
+}
+
+.questionRadioDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+}
+
+.questionOptionText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.questionOptionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.questionOptionBody {
+  font-size: 12px;
+  line-height: 1.45;
+  color: $text-secondary;
+}
+
 .questionForm {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
+
+  textarea {
+    width: 100%;
+    min-height: 76px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid $border-color;
+    background: $bg-secondary;
+    color: $text-primary;
+    font: inherit;
+    font-size: 13px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px var(--item-active-bg);
+    }
+  }
 }
 
-.questionChoices button,
-.questionForm button {
+.questionActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid $border-subtle;
+}
+
+.questionSkipBtn,
+.questionContinueBtn {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 7px 12px;
-  border: 1px solid $border-color;
-  border-radius: 7px;
-  background: var(--user-bubble-bg);
-  color: var(--user-bubble-text);
+  transition: background-color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
 }
 
-.questionForm textarea {
-  flex: 1 1 100%;
-  min-height: 64px;
-  resize: vertical;
-  padding: 9px 10px;
+.questionSkipBtn {
   border: 1px solid $border-color;
-  border-radius: 7px;
-  background: $bg-surface;
-  color: $text-body;
-  font: inherit;
+  background: transparent;
+  color: $text-primary;
+
+  &:hover {
+    background: var(--item-hover-bg);
+  }
 }
 
-.questionForm button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.questionContinueBtn {
+  border: 1px solid transparent;
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
 .todoCard {
@@ -311,4 +509,83 @@
       border-color: #c4e2ff;
     }
   }
+}
+
+.turnWorkspacePath {
+  align-self: flex-end;
+  margin-top: -14px;
+  font-size: 11.5px;
+  color: $text-muted;
+  overflow-wrap: anywhere;
+}
+
+.warningLine {
+  font-size: 12.5px;
+  color: $warning;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mediaList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mediaImage {
+  display: block;
+  max-width: min(100%, 480px);
+  max-height: 360px;
+  height: auto;
+  border-radius: $radius-md;
+  border: 1px solid $border-color;
+}
+
+.mediaPathRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mediaPathButton {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid $border-color;
+  border-radius: $radius-md;
+  background: $bg-surface;
+  color: $text-body;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+
+  strong {
+    color: $text-primary;
+  }
+}
+
+.mediaPathValue {
+  color: $text-muted;
+  overflow-wrap: anywhere;
+}
+
+.mediaMissingText {
+  font-size: 12px;
+  color: $danger;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

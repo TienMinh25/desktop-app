@@ -1,9 +1,10 @@
-import { expect, it } from "bun:test"
+import { expect, it, spyOn } from "bun:test"
 import { Headers, Response } from "undici"
 import type { Response as UndiciResponse } from "undici-types"
 import type { BackendFetch } from "../../../src/infrastructure/http/backend-http-client"
 import { BackendHttpClient } from "../../../src/infrastructure/http/backend-http-client"
 import { ChatClient } from "../../../src/domain/chat/chat-client"
+import { logger } from "../../../src/infrastructure/logging/logger"
 
 function sseResponse(...events: string[]): UndiciResponse {
   return new Response(events.join(""), { status: 200, headers: { "content-type": "text/event-stream" } })
@@ -29,14 +30,16 @@ it("sends the configured model and streams Responses text and output items", asy
     return sseResponse(
       `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "hello" })}\n\n`,
       `data: ${JSON.stringify({ type: "response.completed", response: { output: [callItem] } })}\n\n`,
+      "data: [DONE]\n\n",
     )
   })
 
   try {
     const events = []
-    for await (const event of client.stream({ model: "request-model", input: [{ role: "user", content: "hi" }], stream: true })) events.push(event)
+    for await (const event of client.stream({ model: "request-model", input: [{ role: "user", content: "hi" }], project_id: 1 })) events.push(event)
 
-    expect(sentBody).toMatchObject({ model: "configured-model", stream: true, input: [{ role: "user", content: "hi" }] })
+    expect(sentBody).not.toHaveProperty("stream")
+    expect(sentBody).toMatchObject({ project_id: 1, model: "configured-model", input: [{ role: "user", content: "hi" }] })
     expect(captured.authorization).toBe("Bearer test-token")
     expect(events).toEqual([
       { type: "text.delta", text: "hello" },
@@ -54,7 +57,7 @@ it("accepts a Responses SSE frame larger than 1 MB", async () => {
   const client = createChatClient(async () => sseResponse(`data: ${JSON.stringify({ type: "response.completed", response: { output: [callItem] } })}\n\n`))
   try {
     const events = []
-    for await (const event of client.stream({ model: "model", input: [], stream: true })) events.push(event)
+    for await (const event of client.stream({ model: "model", input: [], project_id: 1 })) events.push(event)
     expect(events[0]).toMatchObject({ type: "response.output-items", items: [callItem] })
   } finally {
     await client.close()
@@ -62,19 +65,22 @@ it("accepts a Responses SSE frame larger than 1 MB", async () => {
 })
 
 it("returns endpoint errors and rejects malformed Responses SSE frames", async () => {
+  const logError = spyOn(logger, "apiError")
   const failed = createChatClient(async () => new Response("backend unavailable", { status: 503 }), "model")
   try {
     await expect(async () => {
-      for await (const _event of failed.stream({ model: "model", input: [], stream: true })) {}
-    }).toThrow("Responses endpoint returned 503: backend unavailable")
+      for await (const _event of failed.stream({ model: "model", input: [], project_id: 1 })) {}
+    }).toThrow(/^Responses endpoint returned 503$/)
+    expect(logError).toHaveBeenCalledWith("POST", "api/v1/chat/responses", expect.stringContaining("backend unavailable"), expect.any(Number))
   } finally {
+    logError.mockRestore()
     await failed.close()
   }
 
   const malformed = createChatClient(async () => sseResponse("data: {bad json}\n\n"), "model")
   try {
     await expect(async () => {
-      for await (const _event of malformed.stream({ model: "model", input: [], stream: true })) {}
+      for await (const _event of malformed.stream({ model: "model", input: [], project_id: 1 })) {}
     }).toThrow("Invalid Responses stream event")
   } finally {
     await malformed.close()
@@ -83,9 +89,45 @@ it("returns endpoint errors and rejects malformed Responses SSE frames", async (
   const malformedShape = createChatClient(async () => sseResponse('data: {"type":"response.completed","response":{"output":"not-an-array"}}\n\n'), "model")
   try {
     await expect(async () => {
-      for await (const _event of malformedShape.stream({ model: "model", input: [], stream: true })) {}
+      for await (const _event of malformedShape.stream({ model: "model", input: [], project_id: 1 })) {}
     }).toThrow("invalid output array")
   } finally {
     await malformedShape.close()
+  }
+})
+
+it("keeps the HTTP status when the error response body cannot be read", async () => {
+  async function* brokenBody() {
+    yield Buffer.from("private detail")
+    throw new Error("connection interrupted")
+  }
+  const client = createChatClient(async () => new Response(brokenBody(), { status: 502 }))
+  try {
+    await expect(async () => {
+      for await (const _event of client.stream({ model: "model", input: [], project_id: 1 })) {}
+    }).toThrow(/^Responses endpoint returned 502$/)
+  } finally {
+    await client.close()
+  }
+})
+
+const deltaFrame = 'data: {"type":"response.output_text.delta","delta":"partial"}\n\n'
+const prematureEnd = "Responses stream ended before response.completed"
+
+it.each([
+  ["[DONE]", "data: [DONE]\n\n", prematureEnd],
+  ["[DONE] before a later completion", 'data: [DONE]\n\ndata: {"type":"response.completed","response":{"output":[]}}\n\n', prematureEnd],
+  ["EOF after a delta", deltaFrame, prematureEnd],
+  ["response.failed", 'data: {"type":"response.failed","response":{"error":{"message":"quota exceeded"}}}\n\n', "quota exceeded"],
+  ["response.incomplete", 'data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}\n\n', "Responses generation was incomplete: max_output_tokens"],
+  ["error", 'data: {"type":"error","error":{"message":"upstream reset"}}\n\n', "upstream reset"],
+])("rejects %s before response.completed", async (_name, frames, message) => {
+  const client = createChatClient(async () => sseResponse(frames))
+  try {
+    await expect(async () => {
+      for await (const _event of client.stream({ model: "model", input: [], project_id: 1 })) {}
+    }).toThrow(message)
+  } finally {
+    await client.close()
   }
 })

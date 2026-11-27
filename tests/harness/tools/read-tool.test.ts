@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from "bun:test"
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
 import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -73,4 +73,70 @@ it("returns one page and exposes the offset for the next read", async () => {
   const first = await readTool.prepare!({ path: "paged.txt", offset: 0, limit: 2 }, testContext.context)
   expect(await readTool.execute({ path: "paged.txt", offset: 0, limit: 2 }, testContext.context, first.data))
     .toBe("Lines 1-2 (next offset: 2)\nfirst\nsecond")
+})
+
+it("reads csv files through the UTF-8 text path", async () => {
+  await writeFile(join(testContext.context.workspacePath, "data.csv"), "a,b\n1,2\n3,4")
+  const prepared = await readTool.prepare!({ path: "data.csv", offset: 0, limit: 2 }, testContext.context)
+  expect(await readTool.execute({ path: "data.csv", offset: 0, limit: 2 }, testContext.context, prepared.data))
+    .toBe("Lines 1-2 (next offset: 2)\na,b\n1,2")
+  const next = { path: "data.csv", offset: 2, limit: 2 }
+  const second = await readTool.prepare!(next, testContext.context)
+  expect(await readTool.execute(next, testContext.context, second.data)).toBe("Lines 3-3 of 3 (end of file)\n3,4")
+})
+
+it("refuses Office files with a text message without reading bytes", async () => {
+  const bytes = spyOn(testContext.context.environment, "readFileBytes")
+  const textPage = spyOn(testContext.context.environment, "readTextFilePage")
+
+  for (const ext of [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"]) {
+    const filename = `report${ext}`
+    await writeFile(join(testContext.context.workspacePath, filename), "placeholder")
+    const prepared = await readTool.prepare!({ path: filename }, testContext.context)
+    const result = await readTool.execute({ path: filename }, { ...testContext.context, mediaInput: true }, prepared.data)
+    expect(result).toBe(`Reading ${ext} files is not supported yet. Convert the file to PDF or text first.`)
+  }
+  expect(bytes).not.toHaveBeenCalled()
+  expect(textPage).not.toHaveBeenCalled()
+})
+
+it("refuses images and PDFs without reading bytes when mediaInput is false", async () => {
+  const bytes = spyOn(testContext.context.environment, "readFileBytes")
+  const textPage = spyOn(testContext.context.environment, "readTextFilePage")
+
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
+  const pdfBytes = Buffer.from("%PDF-1.7\n")
+  await writeFile(join(testContext.context.workspacePath, "chart.png"), pngBytes)
+  await writeFile(join(testContext.context.workspacePath, "doc.pdf"), pdfBytes)
+
+  const pngPrepared = await readTool.prepare!({ path: "chart.png" }, testContext.context)
+  expect(await readTool.execute({ path: "chart.png" }, { ...testContext.context, mediaInput: false }, pngPrepared.data))
+    .toBe("The current model does not support reading PNG image files.")
+
+  const pdfPrepared = await readTool.prepare!({ path: "doc.pdf" }, testContext.context)
+  expect(await readTool.execute({ path: "doc.pdf" }, { ...testContext.context, mediaInput: false }, pdfPrepared.data))
+    .toBe("The current model does not support reading PDF document files.")
+
+  expect(bytes).not.toHaveBeenCalled()
+  expect(textPage).not.toHaveBeenCalled()
+})
+
+it("returns image and PDF data URLs when mediaInput is true", async () => {
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])
+  const pdfBytes = Buffer.from("%PDF-1.7\n")
+  await writeFile(join(testContext.context.workspacePath, "chart.png"), pngBytes)
+  await writeFile(join(testContext.context.workspacePath, "doc.pdf"), pdfBytes)
+
+  const mediaContext = { ...testContext.context, mediaInput: true }
+  const pngPrepared = await readTool.prepare!({ path: "chart.png" }, mediaContext)
+  expect(await readTool.execute({ path: "chart.png" }, mediaContext, pngPrepared.data)).toEqual([
+    { type: "input_text", text: "Read file: chart.png (PNG image)." },
+    { type: "input_image", image_url: `data:image/png;base64,${pngBytes.toString("base64")}`, detail: "auto" },
+  ])
+
+  const pdfPrepared = await readTool.prepare!({ path: "doc.pdf" }, mediaContext)
+  expect(await readTool.execute({ path: "doc.pdf" }, mediaContext, pdfPrepared.data)).toEqual([
+    { type: "input_text", text: "Read file: doc.pdf (PDF document)." },
+    { type: "input_file", filename: "doc.pdf", file_data: `data:application/pdf;base64,${pdfBytes.toString("base64")}` },
+  ])
 })
